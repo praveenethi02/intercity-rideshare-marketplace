@@ -6,6 +6,7 @@ const db = require('./db');
 const respond = require('./utils/respond');
 const ApiError = require('./utils/ApiError');
 const { notFound, errorHandler } = require('./middleware/error');
+const authRoutes = require('./modules/auth/auth.routes');
 
 function createApp() {
   const app = express();
@@ -29,6 +30,8 @@ function createApp() {
     }
     return respond(res, { message: 'Service is healthy', data: { status: 'ok' } });
   });
+
+  app.use('/api/v1/auth', authRoutes);
 
   app.use(notFound);
   app.use(errorHandler);
