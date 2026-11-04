@@ -63,7 +63,7 @@ describe('POST /auth/register', () => {
   });
 
   test('rejects a phone number that is already registered, in any format', async () => {
-    await post('/auth/register', newUserData({ phone: '0771234567' }));
+    await signedInUser({ phone: '0771234567' });
     const res = await post('/auth/register', newUserData({ phone: '+94771234567' }));
 
     expect(res.status).toBe(409);

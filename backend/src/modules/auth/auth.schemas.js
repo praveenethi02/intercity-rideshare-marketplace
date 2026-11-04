@@ -41,4 +41,35 @@ const refresh = z.strictObject({
   refreshToken: z.string().min(1).max(200),
 });
 
-module.exports = { phone, newPassword, fullName, email, selectableRole, register, login, refresh };
+const otp = z.string().regex(/^\d{6}$/, 'The code must be 6 digits');
+
+const verifyPhone = z.strictObject({ phone, otp });
+
+const phoneOnly = z.strictObject({ phone });
+
+const resetPassword = z.strictObject({ phone, otp, newPassword });
+
+const changePassword = z
+  .strictObject({
+    currentPassword: z.string().min(1).max(200),
+    newPassword,
+  })
+  .refine((body) => body.currentPassword !== body.newPassword, {
+    message: 'The new password must be different from the current one',
+    path: ['newPassword'],
+  });
+
+module.exports = {
+  phone,
+  newPassword,
+  fullName,
+  email,
+  selectableRole,
+  register,
+  login,
+  refresh,
+  verifyPhone,
+  phoneOnly,
+  resetPassword,
+  changePassword,
+};

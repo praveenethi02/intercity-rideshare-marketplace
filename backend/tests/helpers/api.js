@@ -1,9 +1,13 @@
 const request = require('supertest');
 const createApp = require('../../src/app');
+const sms = require('../../src/services/sms');
+const { normalizePhone } = require('../../src/utils/phone');
 
 const app = createApp();
 
 const PASSWORD = 'Str0ngPass';
+
+const smsSend = jest.spyOn(sms, 'send').mockResolvedValue();
 
 let nextPhone = 10000000;
 
@@ -25,15 +29,23 @@ const post = (path, body, accessToken) => {
   return req.send(body);
 };
 
-/** Registers a user and signs them in. Returns { data, user, tokens }. */
+/** The code from the most recent SMS sent to a phone number. */
+function lastOtp(phone) {
+  const normalized = normalizePhone(phone);
+  const call = smsSend.mock.calls.filter(([to]) => to === normalized).at(-1);
+  if (!call) throw new Error(`No SMS was sent to ${normalized}`);
+  return call[1].match(/\b\d{6}\b/)[0];
+}
+
+/** Registers a user, verifies their phone and signs them in. Returns { data, user, tokens }. */
 async function signedInUser(overrides = {}) {
   const data = newUserData(overrides);
   const registered = await post('/auth/register', data);
   expect(registered.status).toBe(201);
 
-  const login = await post('/auth/login', { phone: data.phone, password: data.password });
-  expect(login.status).toBe(200);
-  return { data, user: login.body.data.user, tokens: login.body.data.tokens };
+  const verified = await post('/auth/otp/verify', { phone: data.phone, otp: lastOtp(data.phone) });
+  expect(verified.status).toBe(200);
+  return { data, user: verified.body.data.user, tokens: verified.body.data.tokens };
 }
 
-module.exports = { app, PASSWORD, newUserData, post, signedInUser };
+module.exports = { app, PASSWORD, smsSend, newUserData, post, lastOtp, signedInUser };

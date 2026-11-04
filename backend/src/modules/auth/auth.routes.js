@@ -15,10 +15,43 @@ router.post('/register', validate({ body: schemas.register }), async (req, res) 
   const user = await authService.register(req.validated.body);
   return respond(res, {
     status: 201,
-    message: 'Registration successful',
+    message: 'Registration started. Enter the code sent to your phone.',
     data: { user: toPublicUser(user) },
   });
 });
+
+router.post('/otp/verify', validate({ body: schemas.verifyPhone }), async (req, res) => {
+  const { user, tokens } = await authService.verifyPhone(req.validated.body);
+  return respond(res, {
+    message: 'Phone number verified',
+    data: { user: toPublicUser(user), tokens },
+  });
+});
+
+router.post('/otp/resend', validate({ body: schemas.phoneOnly }), async (req, res) => {
+  await authService.resendRegistrationOtp(req.validated.body);
+  return respond(res, { message: 'If the account needs verifying, a new code has been sent' });
+});
+
+router.post('/password/forgot', validate({ body: schemas.phoneOnly }), async (req, res) => {
+  await authService.forgotPassword(req.validated.body);
+  return respond(res, { message: 'If the account exists, a reset code has been sent' });
+});
+
+router.post('/password/reset', validate({ body: schemas.resetPassword }), async (req, res) => {
+  await authService.resetPassword(req.validated.body);
+  return respond(res, { message: 'Password reset. Please log in again.' });
+});
+
+router.post(
+  '/password/change',
+  authenticate,
+  validate({ body: schemas.changePassword }),
+  async (req, res) => {
+    await authService.changePassword(req.user, req.sessionId, req.validated.body);
+    return respond(res, { message: 'Password changed' });
+  },
+);
 
 router.post('/login', validate({ body: schemas.login }), async (req, res) => {
   const { user, tokens } = await authService.login(req.validated.body);
