@@ -8,6 +8,7 @@ const ApiError = require('./utils/ApiError');
 const { notFound, errorHandler } = require('./middleware/error');
 const authRoutes = require('./modules/auth/auth.routes');
 const userRoutes = require('./modules/users/user.routes');
+const adminRoutes = require('./modules/admin/admin.routes');
 
 function createApp() {
   const app = express();
@@ -34,6 +35,7 @@ function createApp() {
 
   app.use('/api/v1/auth', authRoutes);
   app.use('/api/v1/users', userRoutes);
+  app.use('/api/v1/admin', adminRoutes);
 
   app.use(notFound);
   app.use(errorHandler);

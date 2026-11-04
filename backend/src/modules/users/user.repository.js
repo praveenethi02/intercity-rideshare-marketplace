@@ -92,6 +92,30 @@ async function changeStatus(id, fromStatus, toStatus, client = db) {
   return rows[0] || null;
 }
 
+/** Returns one page of users, newest first, and the total number of matches. */
+async function search({ role, status, search: text, page, limit }, client = db) {
+  // Escape LIKE wildcards so that a search for "100%" is taken literally.
+  const pattern = text ? `%${text.replace(/[\\%_]/g, '\\$&')}%` : null;
+  const filter = `
+    ($1::user_role IS NULL OR role = $1::user_role)
+    AND ($2::user_status IS NULL OR status = $2::user_status)
+    AND ($3::text IS NULL OR full_name ILIKE $3::text OR phone ILIKE $3::text OR email ILIKE $3::text)`;
+  const filterParams = [role ?? null, status ?? null, pattern];
+
+  const count = await client.query(
+    `SELECT count(*)::int AS total FROM users WHERE ${filter}`,
+    filterParams,
+  );
+  const { rows } = await client.query(
+    `SELECT * FROM users WHERE ${filter}
+     ORDER BY created_at DESC, id
+     LIMIT $4::int OFFSET $5::int`,
+    [...filterParams, limit, (page - 1) * limit],
+  );
+
+  return { users: rows, total: count.rows[0].total };
+}
+
 /** Fields safe to send to API clients. Never includes the password hash. */
 function toPublicUser(user) {
   return {
@@ -118,5 +142,6 @@ module.exports = {
   updateProfile,
   updateRole,
   changeStatus,
+  search,
   toPublicUser,
 };

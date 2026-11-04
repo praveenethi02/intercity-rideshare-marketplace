@@ -11,7 +11,8 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "migrate": "node scripts/migrate.js",
-    "test": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js --runInBand"
+    "test": "node --experimental-vm-modules --no-warnings node_modules/jest/bin/jest.js --runInBand",
+    "seed:admin": "node scripts/seed-admin.js"
   },
   "jest": {
     "testEnvironment": "node",
