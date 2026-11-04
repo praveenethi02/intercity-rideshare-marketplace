@@ -29,6 +29,16 @@ const post = (path, body, accessToken) => {
   return req.send(body);
 };
 
+const send = (method) => (path, accessToken, body) => {
+  const req = request(app)[method](`/api/v1${path}`);
+  if (accessToken) req.set('Authorization', `Bearer ${accessToken}`);
+  return body === undefined ? req : req.send(body);
+};
+
+const get = send('get');
+const patch = send('patch');
+const put = send('put');
+
 /** The code from the most recent SMS sent to a phone number. */
 function lastOtp(phone) {
   const normalized = normalizePhone(phone);
@@ -48,4 +58,15 @@ async function signedInUser(overrides = {}) {
   return { data, user: verified.body.data.user, tokens: verified.body.data.tokens };
 }
 
-module.exports = { app, PASSWORD, smsSend, newUserData, post, lastOtp, signedInUser };
+module.exports = {
+  app,
+  PASSWORD,
+  smsSend,
+  newUserData,
+  post,
+  get,
+  patch,
+  put,
+  lastOtp,
+  signedInUser,
+};

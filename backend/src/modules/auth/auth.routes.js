@@ -61,6 +61,14 @@ router.post('/login', validate({ body: schemas.login }), async (req, res) => {
   });
 });
 
+router.post('/reactivate', validate({ body: schemas.login }), async (req, res) => {
+  const { user, tokens } = await authService.reactivate(req.validated.body);
+  return respond(res, {
+    message: 'Account reactivated',
+    data: { user: toPublicUser(user), tokens },
+  });
+});
+
 router.post('/refresh', validate({ body: schemas.refresh }), async (req, res) => {
   const tokens = await authService.refresh(req.validated.body);
   return respond(res, { message: 'Token refreshed', data: { tokens } });

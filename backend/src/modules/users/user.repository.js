@@ -50,6 +50,48 @@ async function updatePassword(id, passwordHash, client = db) {
   ]);
 }
 
+/** Updates only the fields provided. A null value clears an optional field. */
+async function updateProfile(id, { fullName, email, avatarUrl }, client = db) {
+  const { rows } = await client.query(
+    `UPDATE users
+     SET full_name = CASE WHEN $2 THEN $3 ELSE full_name END,
+         email = CASE WHEN $4 THEN $5 ELSE email END,
+         avatar_url = CASE WHEN $6 THEN $7 ELSE avatar_url END,
+         updated_at = now()
+     WHERE id = $1
+     RETURNING *`,
+    [
+      id,
+      fullName !== undefined,
+      fullName ?? null,
+      email !== undefined,
+      email ?? null,
+      avatarUrl !== undefined,
+      avatarUrl ?? null,
+    ],
+  );
+  return rows[0] || null;
+}
+
+async function updateRole(id, role, client = db) {
+  const { rows } = await client.query(
+    'UPDATE users SET role = $2, updated_at = now() WHERE id = $1 RETURNING *',
+    [id, role],
+  );
+  return rows[0] || null;
+}
+
+/** Moves a user from one status to another. Returns null if they are no longer in fromStatus. */
+async function changeStatus(id, fromStatus, toStatus, client = db) {
+  const { rows } = await client.query(
+    `UPDATE users SET status = $3, updated_at = now()
+     WHERE id = $1 AND status = $2
+     RETURNING *`,
+    [id, fromStatus, toStatus],
+  );
+  return rows[0] || null;
+}
+
 /** Fields safe to send to API clients. Never includes the password hash. */
 function toPublicUser(user) {
   return {
@@ -73,5 +115,8 @@ module.exports = {
   updatePendingRegistration,
   markPhoneVerified,
   updatePassword,
+  updateProfile,
+  updateRole,
+  changeStatus,
   toPublicUser,
 };

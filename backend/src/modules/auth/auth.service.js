@@ -148,6 +148,29 @@ async function login({ phone, password }) {
   return { user, tokens: await startSession(user) };
 }
 
+/** Reopens an account the user closed themselves and signs them in. */
+async function reactivate({ phone, password }) {
+  const user = await userRepository.findByPhone(phone);
+  const passwordIsCorrect = await verifyPassword(password, user?.password_hash);
+
+  if (!user || !passwordIsCorrect) throw invalidCredentials();
+  if (user.status === USER_STATUS.ACTIVE) {
+    throw new ApiError(409, 'ACCOUNT_ALREADY_ACTIVE', 'This account is already active');
+  }
+  if (user.status !== USER_STATUS.DEACTIVATED) assertCanSignIn(user);
+
+  return db.transaction(async (tx) => {
+    const reopened = await userRepository.changeStatus(
+      user.id,
+      USER_STATUS.DEACTIVATED,
+      USER_STATUS.ACTIVE,
+      tx,
+    );
+    if (!reopened) throw new ApiError(409, 'CONFLICT', 'The account status has changed');
+    return { user: reopened, tokens: await startSession(reopened, tx) };
+  });
+}
+
 /** Exchanges a refresh token for new tokens. Reusing an old token ends the session. */
 async function refresh({ refreshToken }) {
   const sessionId = tokens.parseRefreshToken(refreshToken);
@@ -195,6 +218,7 @@ module.exports = {
   resetPassword,
   changePassword,
   login,
+  reactivate,
   refresh,
   logout,
   logoutEverywhere,
