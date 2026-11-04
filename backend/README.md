@@ -25,6 +25,8 @@ npm test
 
 Tests use PGlite, a PostgreSQL that runs inside the test process, so they need no database or `.env`.
 
+GitHub Actions runs these tests on every pull request that changes the backend. It also applies the migrations to a real PostgreSQL 16 server, seeds the admin account and checks that the server starts.
+
 ## Response format
 
 Every response has the same shape:
