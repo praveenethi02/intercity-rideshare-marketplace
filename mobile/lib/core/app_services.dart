@@ -15,6 +15,7 @@ class AppServices extends InheritedWidget {
     required this.trips,
     this.driverVehicleId,
     this.vehicleSeatCapacity,
+    this.checkDriverVehicle,
     this.onBookSegment,
     required super.child,
   });
@@ -26,6 +27,10 @@ class AppServices extends InheritedWidget {
 
   /// Total seats in that vehicle including the driver's seat (from Member 3).
   final int? vehicleSeatCapacity;
+
+  /// Reloads the driver's vehicles. Returns null when they have a usable vehicle,
+  /// or a message that explains why they cannot create a trip.
+  final Future<String?> Function()? checkDriverVehicle;
 
   final BookSegmentCallback? onBookSegment;
 
