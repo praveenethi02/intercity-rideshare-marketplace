@@ -1,0 +1,128 @@
+/* Shared by every page. Module styles use their own class prefix, such as "vh-" or "us-". */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #f3f4f6;
+  color: #111827;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+a { color: #1d4ed8; }
+h1 { margin: 0 0 16px; font-size: 24px; line-height: 1.25; }
+
+.muted { color: #6b7280; }
+.page { padding: 24px; max-width: 1200px; }
+
+.alert {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.button {
+  padding: 8px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.button:hover:not(:disabled) { background: #f9fafb; }
+.button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.button-primary { border-color: #1f2937; background: #1f2937; color: #fff; }
+.button-primary:hover:not(:disabled) { background: #374151; }
+
+.button-danger { border-color: #b91c1c; background: #b91c1c; color: #fff; }
+.button-danger:hover:not(:disabled) { background: #991b1b; }
+
+/* Layout */
+.shell { display: flex; flex-direction: column; min-height: 100vh; }
+
+.shell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 24px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #fff;
+}
+.shell-brand { font-size: 16px; white-space: nowrap; }
+.shell-account { display: flex; align-items: center; gap: 12px; }
+
+.shell-body { display: flex; flex: 1; min-height: 0; }
+
+.shell-nav {
+  flex: 0 0 200px;
+  padding: 16px 12px;
+  border-right: 1px solid #e5e7eb;
+  background: #fff;
+}
+.shell-nav a {
+  display: block;
+  margin-bottom: 4px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: #374151;
+  text-decoration: none;
+}
+.shell-nav a:hover { background: #f3f4f6; }
+.shell-nav a.active { background: #1f2937; color: #fff; }
+
+.shell-main { flex: 1; min-width: 0; }
+
+@media (max-width: 700px) {
+  .shell-header { padding: 10px 16px; }
+  .shell-account span { display: none; }
+  .shell-body { flex-direction: column; }
+  .shell-nav {
+    flex: none;
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 8px 12px;
+    border-right: 0;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .shell-nav a { margin-bottom: 0; white-space: nowrap; }
+  .page { padding: 16px; }
+}
+
+/* Login */
+.login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 16px;
+}
+.login-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 380px;
+  padding: 28px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+}
+.login-card h1 { margin: 0; }
+.login-card p { margin: 0; }
+.login-card label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; }
+.login-card input {
+  padding: 9px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font: inherit;
+  font-weight: 400;
+}

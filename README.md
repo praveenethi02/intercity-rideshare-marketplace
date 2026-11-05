@@ -73,8 +73,9 @@ In development. Work in progress is on feature branches.
 | Folder | Contents |
 | --- | --- |
 | [`backend/`](backend/README.md) | Node.js and Express REST API with PostgreSQL |
+| [`admin/`](admin/README.md) | React admin dashboard |
 
-The mobile app (`mobile/`), web and admin app (`web/`) and project documents (`docs/`) will be added here as they are developed.
+The mobile app (`mobile/`) and project documents (`docs/`) will be added here as they are developed.
 
 ## Branches
 
