@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import Avatar from '../../components/Avatar';
 import { errorMessage } from '../../lib/api';
 import StatusBadge from './StatusBadge';
 import { ROLE_LABELS, STATUS_LABELS, usersApi } from './usersApi';
@@ -63,6 +64,7 @@ export default function UsersPage() {
   return (
     <div className="page">
       <h1>Users</h1>
+      <p className="page-subtitle">Search accounts, review details and manage access.</p>
 
       <form className="us-filters" onSubmit={handleSearch}>
         <input
@@ -127,7 +129,10 @@ export default function UsersPage() {
               {users.map((user) => (
                 <tr key={user.id}>
                   <td>
-                    <Link to={`/users/${user.id}`}>{user.fullName}</Link>
+                    <Link className="us-person" to={`/users/${user.id}`}>
+                      <Avatar name={user.fullName} />
+                      {user.fullName}
+                    </Link>
                   </td>
                   <td>{user.phone}</td>
                   <td>{ROLE_LABELS[user.role] ?? user.role}</td>

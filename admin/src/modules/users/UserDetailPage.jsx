@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import Avatar from '../../components/Avatar';
 import { errorMessage } from '../../lib/api';
 import { useSession } from '../../lib/auth';
 import StatusBadge from './StatusBadge';
@@ -74,7 +75,9 @@ export default function UserDetailPage() {
 
   return (
     <div className="page">
-      <Link to="/users">← Back to users</Link>
+      <Link className="us-back" to="/users">
+        ← Back to users
+      </Link>
 
       {error && (
         <p className="alert us-spaced" role="alert">
@@ -87,6 +90,7 @@ export default function UserDetailPage() {
       {user && (
         <>
           <div className="us-heading">
+            <Avatar name={user.fullName} />
             <h1>{user.fullName}</h1>
             <StatusBadge status={user.status} />
           </div>

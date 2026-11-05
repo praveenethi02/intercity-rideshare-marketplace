@@ -1,3 +1,4 @@
+import { Navigation } from 'lucide-react';
 import { useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { errorMessage } from '../lib/api';
@@ -30,8 +31,20 @@ export default function LoginPage() {
   return (
     <div className="login">
       <form className="login-card" onSubmit={handleSubmit}>
-        <h1>Rideshare Admin</h1>
-        <p className="muted">Log in with your administrator account.</p>
+        <div className="login-brand">
+          <span className="brand-mark">
+            <Navigation size={18} aria-hidden="true" />
+          </span>
+          <div>
+            <strong>Intercity</strong>
+            <small>Admin console</small>
+          </div>
+        </div>
+
+        <div>
+          <h1>Log in</h1>
+          <p className="muted">Use your administrator account.</p>
+        </div>
 
         {error && (
           <p className="alert" role="alert">

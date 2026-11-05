@@ -26,11 +26,13 @@ The dashboard runs on `http://localhost:3000`. To use another port, change it in
    api.get('/admin/vehicles');
    ```
 
-3. Export your routes from `src/modules/<name>/routes.jsx`. Only entries with a `label` appear in the sidebar.
+3. Export your routes from `src/modules/<name>/routes.jsx`. Only entries with a `label` appear in the sidebar, and `icon` is an optional [Lucide](https://lucide.dev/icons) icon.
 
    ```jsx
+   import { Car } from 'lucide-react';
+
    export default [
-     { path: '/vehicles', element: <VehicleQueuePage />, label: 'Vehicles' },
+     { path: '/vehicles', element: <VehicleQueuePage />, label: 'Vehicles', icon: Car },
      { path: '/vehicles/:id', element: <VehicleDetailPage /> },
    ];
    ```
@@ -41,7 +43,7 @@ The dashboard runs on `http://localhost:3000`. To use another port, change it in
    const moduleRoutes = [...userRoutes, ...vehicleRoutes];
    ```
 
-Start your CSS class names with a prefix for your module, such as `vh-`, so they do not clash with other modules.
+Start your CSS class names with a prefix for your module, such as `vh-`, so they do not clash with other modules. Use the colour variables at the top of `src/shell.css`, such as `var(--brand-500)`. They match the Figma design system.
 
 ## Sign-in
 
