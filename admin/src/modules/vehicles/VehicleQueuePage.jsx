@@ -16,11 +16,14 @@ export default function VehicleQueuePage() {
   const page = Number(params.get('page') ?? 1);
 
   const [search, setSearch] = useState(q);
-  const [state, setState] = useState({ loading: true, error: null, items: [], total: 0 });
+  // The list is loading until a result for the current filters has arrived.
+  const requestKey = JSON.stringify([status, type, q, page]);
+  const [result, setResult] = useState({ key: null, error: null, items: [], total: 0 });
+  const loading = result.key !== requestKey;
+  const state = { loading, error: loading ? null : result.error, items: result.items, total: result.total };
 
   useEffect(() => {
-    let cancelled = false;
-    setState((s) => ({ ...s, loading: true, error: null }));
+    const request = new AbortController();
     vehiclesApi
       .list({
         verificationStatus: status === 'ALL' ? undefined : status,
@@ -29,12 +32,18 @@ export default function VehicleQueuePage() {
         page,
         limit: LIMIT,
       })
-      .then((res) => !cancelled && setState({ loading: false, error: null, items: res.data, total: res.meta?.total ?? 0 }))
-      .catch((err) => !cancelled && setState({ loading: false, error: errorMessage(err), items: [], total: 0 }));
-    return () => {
-      cancelled = true;
-    };
-  }, [status, type, q, page]);
+      .then((res) => {
+        if (!request.signal.aborted) {
+          setResult({ key: requestKey, error: null, items: res.data, total: res.meta?.total ?? 0 });
+        }
+      })
+      .catch((err) => {
+        if (!request.signal.aborted) {
+          setResult({ key: requestKey, error: errorMessage(err), items: [], total: 0 });
+        }
+      });
+    return () => request.abort();
+  }, [requestKey, status, type, q, page]);
 
   const update = (changes) => {
     const next = new URLSearchParams(params);
