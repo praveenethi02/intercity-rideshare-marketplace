@@ -33,10 +33,8 @@ const tripBody = (overrides = {}) => ({
   ...overrides,
 });
 
-/** Works before and after the drivers module is merged: approves the driver if it exists. */
+/** An APPROVED, ACTIVE driver profile. The trip module requires one to create trips. */
 async function approveDriver(userId) {
-  const { rows } = await db.query("SELECT to_regclass('public.driver_profiles') IS NOT NULL AS present");
-  if (!rows[0].present) return;
   await db.query(
     `INSERT INTO driver_profiles (user_id, license_number, license_expiry, nic_number, verification_status)
      VALUES ($1, $2, '2030-01-01', $3, 'APPROVED')`,
@@ -44,10 +42,49 @@ async function approveDriver(userId) {
   );
 }
 
+let plateCounter = 1000;
+
+/**
+ * A vehicle in the vehicles table (migration 301), owned by the driver. By default it is an
+ * APPROVED, active car with 5 seats in total, 4 of them for passengers.
+ */
+async function addVehicle(driverUserId, overrides = {}) {
+  const v = {
+    vehicleType: 'CAR',
+    totalSeats: 5,
+    passengerSeats: 4,
+    verificationStatus: 'APPROVED',
+    isActive: true,
+    ...overrides,
+  };
+  plateCounter += 1;
+  const { rows } = await db.query(
+    `INSERT INTO vehicles (driver_user_id, vehicle_type, make, model, year, color, plate_number,
+       total_seats, passenger_seats, verification_status, is_active)
+     VALUES ($1, $2, 'Toyota', 'Axio', 2016, 'White', $3, $4, $5, $6, $7)
+     RETURNING id`,
+    [
+      driverUserId,
+      v.vehicleType,
+      `WP CAB-${plateCounter}`,
+      v.totalSeats,
+      v.passengerSeats,
+      v.verificationStatus,
+      v.isActive,
+    ],
+  );
+  return rows[0].id;
+}
+
+/** The usable vehicle of each signed-in driver, by access token. */
+const vehicleOf = new Map();
+
 async function signedInDriver() {
   const { user, tokens } = await signedInUser({ role: 'DRIVER' });
   await approveDriver(user.id);
-  return { user, token: tokens.accessToken };
+  const vehicleId = await addVehicle(user.id);
+  vehicleOf.set(tokens.accessToken, vehicleId);
+  return { user, token: tokens.accessToken, vehicleId };
 }
 
 async function signedInPassenger() {
@@ -55,8 +92,11 @@ async function signedInPassenger() {
   return { user, token: tokens.accessToken };
 }
 
+const createTripRequest = (token, overrides = {}) =>
+  post('/trips', tripBody({ vehicleId: vehicleOf.get(token), ...overrides }), token);
+
 async function createTrip(token, overrides) {
-  const res = await post('/trips', tripBody(overrides), token);
+  const res = await createTripRequest(token, overrides);
   expect(res.status).toBe(201);
   return res.body.data.trip;
 }
@@ -105,7 +145,7 @@ describe('POST /trips', () => {
     ['bad vehicle id', { vehicleId: 'abc' }],
   ])('rejects %s', async (_name, overrides) => {
     const { token } = await signedInDriver();
-    const res = await post('/trips', tripBody(overrides), token);
+    const res = await createTripRequest(token, overrides);
     expect(res.status).toBe(422);
     expect(res.body.meta.code).toBe('VALIDATION_ERROR');
   });
@@ -117,7 +157,7 @@ describe('POST /trips', () => {
     ['the same stop twice in a row', { stops: [STOPS[0], STOPS[0], STOPS[3]] }, 'INVALID_STOPS'],
   ])('refuses %s', async (_name, overrides, code) => {
     const { token } = await signedInDriver();
-    const res = await post('/trips', tripBody(overrides), token);
+    const res = await createTripRequest(token, overrides);
     expect(res.status).toBe(422);
     expect(res.body.meta.code).toBe(code);
   });
@@ -284,6 +324,77 @@ describe('search and seats per segment', () => {
     const res = await get(`/trips/${trip.id}/availability?fromStop=2&toStop=1`, driver.token);
 
     expect(res.status).toBe(422);
+  });
+});
+
+describe('driver and vehicle checks', () => {
+  const expectRefused = (res, status, code) => {
+    expect(res.status).toBe(status);
+    expect(res.body.meta.code).toBe(code);
+  };
+
+  test("refuses another driver's vehicle", async () => {
+    const me = await signedInDriver();
+    const other = await signedInDriver();
+
+    const res = await createTripRequest(me.token, { vehicleId: other.vehicleId });
+
+    expectRefused(res, 403, 'VEHICLE_NOT_OWNED');
+  });
+
+  test('refuses a vehicle that does not exist', async () => {
+    const { token } = await signedInDriver();
+
+    const res = await createTripRequest(token, { vehicleId: crypto.randomUUID() });
+
+    expectRefused(res, 403, 'VEHICLE_NOT_OWNED');
+  });
+
+  test.each(['NOT_SUBMITTED', 'PENDING', 'REJECTED'])('refuses a %s vehicle', async (status) => {
+    const { user, token } = await signedInDriver();
+    const vehicleId = await addVehicle(user.id, { verificationStatus: status });
+
+    const res = await createTripRequest(token, { vehicleId });
+
+    expectRefused(res, 403, 'VEHICLE_NOT_APPROVED');
+  });
+
+  test('refuses an approved vehicle that is inactive', async () => {
+    const { user, token } = await signedInDriver();
+    const vehicleId = await addVehicle(user.id, { isActive: false });
+
+    const res = await createTripRequest(token, { vehicleId });
+
+    expectRefused(res, 403, 'VEHICLE_INACTIVE');
+  });
+
+  test("offers at most the vehicle's passenger seats, never the driver's seat", async () => {
+    const { user, token } = await signedInDriver();
+    // A van with 8 seats in total, 7 for passengers.
+    const vehicleId = await addVehicle(user.id, { vehicleType: 'VAN', totalSeats: 8, passengerSeats: 7 });
+
+    expectRefused(await createTripRequest(token, { vehicleId, seatsOffered: 8 }), 422, 'TOO_MANY_SEATS');
+
+    const allSeats = await createTripRequest(token, { vehicleId, seatsOffered: 7 });
+    expect(allSeats.status).toBe(201);
+    expect(allSeats.body.data.trip).toMatchObject({ vehicleId, seatsOffered: 7, seatsAvailable: 7 });
+  });
+
+  test('checks the seat limit again when a trip is edited', async () => {
+    const { token } = await signedInDriver(); // default car: 4 passenger seats
+    const trip = await publishedTrip(token);
+
+    expectRefused(await patch(`/trips/${trip.id}`, token, { seatsOffered: 5 }), 422, 'TOO_MANY_SEATS');
+    expect((await patch(`/trips/${trip.id}`, token, { seatsOffered: 4 })).status).toBe(200);
+  });
+
+  test('refuses a driver whose profile is not approved', async () => {
+    const { user, tokens } = await signedInUser({ role: 'DRIVER' });
+    const vehicleId = await addVehicle(user.id);
+
+    const res = await post('/trips', tripBody({ vehicleId }), tokens.accessToken);
+
+    expectRefused(res, 403, 'DRIVER_NOT_VERIFIED');
   });
 });
 

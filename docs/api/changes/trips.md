@@ -60,9 +60,11 @@ point, with enough free seats on that part of the route.
   A driver can start at most 30 minutes before departure.
 - When `driver_profiles` exists (drivers module), only `APPROVED` and `ACTIVE` drivers can create
   trips (403 `DRIVER_NOT_VERIFIED`).
-- When `vehicles` exists, the vehicle must be the driver's own and `APPROVED`, and at most
-  `seat_capacity − 1` seats can be offered. The assumed columns are listed in
-  `src/modules/trips/trip.integrations.js`.
+- The vehicle must be the driver's own (403 `VEHICLE_NOT_OWNED`), `APPROVED` (403
+  `VEHICLE_NOT_APPROVED`) and active (403 `VEHICLE_INACTIVE`), the same rule as
+  `getUsableVehicle` in the vehicles module. `seatsOffered` can be at most the vehicle's
+  `passengerSeats` (422 `TOO_MANY_SEATS`). `passengerSeats` already leaves out the driver's seat.
+  The seat limit is checked again when `seatsOffered` is edited.
 
 ## Seats per route segment (for the Booking and Auction modules)
 
