@@ -12,6 +12,8 @@ const adminRoutes = require('./modules/admin/admin.routes');
 const { router: driverRoutes } = require('./modules/drivers/driver.routes');
 const driverAdminRoutes = require('./modules/drivers/driver.admin.routes');
 const fileRoutes = require('./modules/files/file.routes');
+const vehicleRoutes = require('./modules/vehicles/vehicle.routes');
+const vehicleAdminRoutes = require('./modules/vehicles/vehicle.admin.routes');
 
 function createApp() {
   const app = express();
@@ -40,6 +42,8 @@ function createApp() {
   app.use('/api/v1/users', userRoutes);
   app.use('/api/v1/drivers', driverRoutes);
   app.use('/api/v1/files', fileRoutes);
+  app.use('/api/v1/vehicles', vehicleRoutes);
+  app.use('/api/v1/admin/vehicles', vehicleAdminRoutes);
   app.use('/api/v1/admin', driverAdminRoutes);
   app.use('/api/v1/admin', adminRoutes);
 
