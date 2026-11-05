@@ -1,0 +1,38 @@
+import '../models/trip.dart';
+
+/// Towns for picking stops until Google Places is added.
+/// Add more here; keep names unique.
+const List<TripStop> kTowns = [
+  TripStop(name: 'Colombo Fort', lat: 6.9344, lng: 79.8428),
+  TripStop(name: 'Kadawatha', lat: 7.0010, lng: 79.9530),
+  TripStop(name: 'Kiribathgoda', lat: 6.9780, lng: 79.9290),
+  TripStop(name: 'Nittambuwa', lat: 7.1444, lng: 80.0960),
+  TripStop(name: 'Warakapola', lat: 7.2260, lng: 80.1980),
+  TripStop(name: 'Kegalle', lat: 7.2513, lng: 80.3464),
+  TripStop(name: 'Mawanella', lat: 7.2530, lng: 80.4460),
+  TripStop(name: 'Peradeniya', lat: 7.2690, lng: 80.5940),
+  TripStop(name: 'Kandy', lat: 7.2906, lng: 80.6337),
+  TripStop(name: 'Katugastota', lat: 7.3260, lng: 80.6240),
+  TripStop(name: 'Kurunegala', lat: 7.4863, lng: 80.3647),
+  TripStop(name: 'Dambulla', lat: 7.8600, lng: 80.6517),
+  TripStop(name: 'Anuradhapura', lat: 8.3114, lng: 80.4037),
+  TripStop(name: 'Negombo', lat: 7.2083, lng: 79.8358),
+  TripStop(name: 'Chilaw', lat: 7.5758, lng: 79.7953),
+  TripStop(name: 'Puttalam', lat: 8.0362, lng: 79.8283),
+  TripStop(name: 'Moratuwa', lat: 6.7730, lng: 79.8816),
+  TripStop(name: 'Panadura', lat: 6.7132, lng: 79.9026),
+  TripStop(name: 'Kalutara', lat: 6.5854, lng: 79.9607),
+  TripStop(name: 'Aluthgama', lat: 6.4340, lng: 80.0030),
+  TripStop(name: 'Ambalangoda', lat: 6.2355, lng: 80.0538),
+  TripStop(name: 'Galle', lat: 6.0535, lng: 80.2210),
+  TripStop(name: 'Matara', lat: 5.9549, lng: 80.5550),
+  TripStop(name: 'Hambantota', lat: 6.1241, lng: 81.1185),
+  TripStop(name: 'Ratnapura', lat: 6.6828, lng: 80.3992),
+  TripStop(name: 'Avissawella', lat: 6.9550, lng: 80.2100),
+  TripStop(name: 'Nuwara Eliya', lat: 6.9497, lng: 80.7891),
+  TripStop(name: 'Badulla', lat: 6.9934, lng: 81.0550),
+  TripStop(name: 'Trincomalee', lat: 8.5874, lng: 81.2152),
+  TripStop(name: 'Batticaloa', lat: 7.7310, lng: 81.6747),
+  TripStop(name: 'Jaffna', lat: 9.6615, lng: 80.0255),
+  TripStop(name: 'Embilipitiya', lat: 6.3430, lng: 80.8490),
+];

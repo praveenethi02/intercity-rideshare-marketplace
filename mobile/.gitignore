@@ -1,0 +1,27 @@
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+*.iml
+.metadata
+
+# Android
+android/.gradle/
+android/local.properties
+android/key.properties
+android/app/debug/
+android/app/profile/
+android/app/release/
+*.jks
+*.keystore
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Runner.xcworkspace/xcuserdata/
+**/xcuserdata/

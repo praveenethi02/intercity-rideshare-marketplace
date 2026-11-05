@@ -579,7 +579,7 @@ describe('driver account status (SCRUM-47)', () => {
   });
 });
 
-describe('before the trip module is merged (SCRUM-44, SCRUM-45)', () => {
+describe('a driver with no trips (SCRUM-44, SCRUM-45)', () => {
   test('trip history is empty and earnings are zero', async () => {
     const driver = await newDriver();
 
@@ -603,38 +603,14 @@ describe('before the trip module is merged (SCRUM-44, SCRUM-45)', () => {
   });
 });
 
-describe('with the agreed trips table (SCRUM-44, SCRUM-45)', () => {
-  // Stands in for the trip module's migration, using the columns in the team contract.
-  beforeAll(async () => {
-    await db.exec(`
-      CREATE TABLE trips (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        driver_user_id UUID NOT NULL REFERENCES users (id),
-        vehicle_id UUID,
-        origin_name TEXT,
-        destination_name TEXT,
-        departure_at TIMESTAMPTZ NOT NULL,
-        estimated_arrival_at TIMESTAMPTZ,
-        pricing_mode TEXT DEFAULT 'AUCTION',
-        base_price_cents INT,
-        seats_offered INT,
-        seats_available INT,
-        distance_m INT,
-        duration_s INT,
-        status TEXT NOT NULL DEFAULT 'SCHEDULED',
-        cancel_reason TEXT,
-        started_at TIMESTAMPTZ,
-        completed_at TIMESTAMPTZ,
-        cancelled_at TIMESTAMPTZ,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-      )
-    `);
-  });
-
+describe('with the trips table (SCRUM-44, SCRUM-45)', () => {
+  // The trips table comes from the trip module's migration (401_create_trip_tables.sql).
+  // Trips are inserted directly so these tests stay about the driver endpoints.
   const addTrip = (driverId, departure, status, completedAt = null) =>
     db.query(
-      `INSERT INTO trips (driver_user_id, origin_name, destination_name, departure_at, status, completed_at)
-       VALUES ($1, 'Kandy', 'Colombo', $2, $3, $4)`,
+      `INSERT INTO trips (driver_user_id, vehicle_id, pricing_mode, origin_name, destination_name,
+         departure_at, seats_offered, seats_available, base_price_cents, distance_m, status, completed_at)
+       VALUES ($1, gen_random_uuid(), 'AUCTION', 'Kandy', 'Colombo', $2, 3, 3, 150000, 116000, $3, $4)`,
       [driverId, departure, status, completedAt],
     );
 
