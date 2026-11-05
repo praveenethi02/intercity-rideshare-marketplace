@@ -8,6 +8,8 @@ const schema = z
     DATABASE_URL: z.string().min(1),
     CORS_ORIGINS: z.string().default(''),
     TRUST_PROXY: z.coerce.number().int().min(0).default(0),
+    PUBLIC_BASE_URL: z.string().url().default('http://localhost:4000'),
+    UPLOAD_DIR: z.string().min(1).default('uploads'),
 
     JWT_ACCESS_SECRET: z.string().min(32),
     OTP_HMAC_SECRET: z.string().min(32),
