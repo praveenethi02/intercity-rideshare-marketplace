@@ -1,11 +1,11 @@
-import VehicleQueuePage from './VehicleQueuePage';
+import { Car } from 'lucide-react';
 import VehicleDetailPage from './VehicleDetailPage';
+import VehicleQueuePage from './VehicleQueuePage';
 
-// Spread into M1's App.jsx. Only the entry with `label` should appear in the sidebar.
+// Spread into App.jsx. Only the entry with `label` appears in the sidebar.
 const vehicleRoutes = [
-  { path: '/vehicles', element: <VehicleQueuePage />, label: 'Vehicles' },
+  { path: '/vehicles', element: <VehicleQueuePage />, label: 'Vehicles', icon: Car },
   { path: '/vehicles/:id', element: <VehicleDetailPage /> },
 ];
 
 export default vehicleRoutes;
-export { vehicleRoutes };

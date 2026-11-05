@@ -6,18 +6,12 @@ import 'core/auth_service.dart';
 import 'core/formatters.dart';
 import 'features/driver/driver.dart';
 import 'features/trips/trips.dart';
+import 'features/vehicle/vehicle.dart';
 
-/// Runs the Trips & Routes feature against the real backend.
+/// Runs the app against the real backend.
 /// Sign in with a phone and password registered through the auth API.
 /// Member 1's own login/registration screens can replace [LoginScreen] later.
 void main() => runApp(const RideshareApp());
-
-/// Settings that come from the vehicles module once it exists.
-class DriverVehicle {
-  final String vehicleId;
-  final int seatCapacity;
-  const DriverVehicle(this.vehicleId, this.seatCapacity);
-}
 
 class RideshareApp extends StatefulWidget {
   const RideshareApp({super.key});
@@ -29,14 +23,19 @@ class _RideshareAppState extends State<RideshareApp> {
   AuthService? _auth;
   TripRepository? _trips;
   DriverRepository? _drivers;
-  DriverVehicle? _vehicle;
+  VehicleApi? _vehicles;
+  Vehicle? _vehicle;
 
-  void _signedIn(AuthService auth, DriverVehicle? vehicle) => setState(() {
-        _auth = auth;
-        _trips = TripRepository(auth.api);
-        _drivers = DriverRepository(auth.api);
-        _vehicle = vehicle;
-      });
+  void _signedIn(AuthService auth) {
+    setState(() {
+      _auth = auth;
+      _trips = TripRepository(auth.api);
+      _drivers = DriverRepository(auth.api);
+      _vehicles = VehicleApi(auth.api);
+      _vehicle = null;
+    });
+    if (auth.user?.isDriver ?? false) _checkDriverVehicle();
+  }
 
   Future<void> _signOut() async {
     await _auth?.logout();
@@ -44,8 +43,29 @@ class _RideshareAppState extends State<RideshareApp> {
       _auth = null;
       _trips = null;
       _drivers = null;
+      _vehicles = null;
       _vehicle = null;
     });
+  }
+
+  /// Loads the driver's approved vehicle for the trips screens. Returns null when there is one,
+  /// or a message that explains why the driver cannot create a trip.
+  Future<String?> _checkDriverVehicle() async {
+    final api = _vehicles;
+    if (api == null) return 'Sign in again to load your vehicles.';
+    List<Vehicle>? vehicles;
+    Object? failure;
+    try {
+      vehicles = await api.myVehicles();
+    } catch (e) {
+      failure = e;
+    }
+    // The driver may have signed out while this was loading.
+    if (!mounted || !identical(api, _vehicles)) return 'Sign in again to load your vehicles.';
+    final vehicle = vehicles == null ? null : usableVehicle(vehicles);
+    setState(() => _vehicle = vehicle);
+    if (vehicles == null) return 'Could not load your vehicles: $failure';
+    return vehicle == null ? noUsableVehicleMessage(vehicles) : null;
   }
 
   /// Registering makes this user a driver on the server, so the app shows the driver tabs too.
@@ -54,6 +74,7 @@ class _RideshareAppState extends State<RideshareApp> {
     final user = auth?.user;
     if (auth == null || user == null) return;
     setState(() => auth.user = AppUser(id: user.id, fullName: user.fullName, phone: user.phone, role: 'DRIVER'));
+    _checkDriverVehicle();
   }
 
   @override
@@ -68,11 +89,15 @@ class _RideshareAppState extends State<RideshareApp> {
           ? child!
           : AppServices(
               trips: _trips!,
-              driverVehicleId: _vehicle?.vehicleId,
-              vehicleSeatCapacity: _vehicle?.seatCapacity,
+              driverVehicleId: _vehicle?.id,
+              // AppServices takes off the driver's own seat. The API limits a trip to the vehicle's
+              // passengerSeats, which can be fewer than totalSeats - 1, so build the capacity from it.
+              vehicleSeatCapacity: _vehicle == null ? null : _vehicle!.passengerSeats + 1,
+              checkDriverVehicle: _checkDriverVehicle,
               onBookSegment: _demoBookingHandler,
               child: child!,
             ),
+      onGenerateRoute: (settings) => _vehicles == null ? null : vehicleRoute(settings, _vehicles!),
       home: user == null
           ? LoginScreen(onSignedIn: _signedIn)
           : HomeShell(user: user, drivers: _drivers!, onSignOut: _signOut, onBecameDriver: _becameDriver),
@@ -170,7 +195,7 @@ Future<bool> confirmSignOut(BuildContext context, String name) async {
 }
 
 class LoginScreen extends StatefulWidget {
-  final void Function(AuthService auth, DriverVehicle? vehicle) onSignedIn;
+  final void Function(AuthService auth) onSignedIn;
   const LoginScreen({super.key, required this.onSignedIn});
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -182,8 +207,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _baseUrl = TextEditingController(text: kIsWeb ? 'http://localhost:4000/api/v1' : 'http://10.0.2.2:4000/api/v1');
   final _phone = TextEditingController();
   final _password = TextEditingController();
-  final _vehicleId = TextEditingController(text: '00000000-0000-4000-8000-000000000001');
-  int _seatCapacity = 5;
   bool _busy = false;
   String? _error;
 
@@ -192,7 +215,6 @@ class _LoginScreenState extends State<LoginScreen> {
     _baseUrl.dispose();
     _phone.dispose();
     _password.dispose();
-    _vehicleId.dispose();
     super.dispose();
   }
 
@@ -204,9 +226,9 @@ class _LoginScreenState extends State<LoginScreen> {
     });
     final auth = AuthService(_baseUrl.text.trim().replaceAll(RegExp(r'/+$'), ''));
     try {
-      final user = await auth.login(_phone.text.trim(), _password.text);
+      await auth.login(_phone.text.trim(), _password.text);
       if (!mounted) return;
-      widget.onSignedIn(auth, user.isDriver ? DriverVehicle(_vehicleId.text.trim(), _seatCapacity) : null);
+      widget.onSignedIn(auth);
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
     } finally {
@@ -259,26 +281,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 validator: (v) => (v == null || !v.startsWith('http')) ? 'Enter http(s)://…' : null,
               ),
-              TextFormField(
-                controller: _vehicleId,
-                decoration: const InputDecoration(
-                  labelText: 'Vehicle ID (drivers)',
-                  helperText: 'Any UUID until the vehicles module exists',
-                ),
-                validator: (v) => RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(v?.trim() ?? '') ? null : 'Enter a UUID',
-              ),
-              Row(children: [
-                const Expanded(child: Text('Vehicle seats (incl. driver)')),
-                IconButton(
-                  onPressed: _seatCapacity > 2 ? () => setState(() => _seatCapacity--) : null,
-                  icon: const Icon(Icons.remove),
-                ),
-                Text('$_seatCapacity'),
-                IconButton(
-                  onPressed: _seatCapacity < 15 ? () => setState(() => _seatCapacity++) : null,
-                  icon: const Icon(Icons.add),
-                ),
-              ]),
             ],
           ),
         ]),

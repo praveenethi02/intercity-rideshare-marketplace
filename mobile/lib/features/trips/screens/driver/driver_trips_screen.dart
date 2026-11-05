@@ -28,18 +28,44 @@ class _DriverTripsScreenState extends State<DriverTripsScreen> {
 
   Future<void> _reload() async {
     final future = AppServices.of(context).trips.myTrips();
-    setState(() => _future = future);
+    setState(() {
+      _future = future;
+    });
     await future.catchError((_) => <Trip>[]);
   }
 
   Future<void> _newTrip() async {
-    final services = AppServices.of(context);
-    if (services.driverVehicleId == null) {
-      showSnack(context, 'Add a vehicle and wait for approval before creating trips.');
+    // Checked again here because an admin may have approved the vehicle since sign-in.
+    final check = AppServices.of(context).checkDriverVehicle;
+    final problem = check == null ? 'Add a vehicle and wait for approval before creating trips.' : await check();
+    if (!mounted) return;
+    if (problem != null) {
+      await _showNoVehicle(problem);
       return;
     }
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CreateTripScreen()));
     if (mounted) _reload();
+  }
+
+  Future<void> _showNoVehicle(String message) async {
+    final openVehicles = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('No approved vehicle'),
+        content: Text(message),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Close')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('My vehicles')),
+        ],
+      ),
+    );
+    if (openVehicles == true && mounted) await _openVehicles();
+  }
+
+  Future<void> _openVehicles() async {
+    await Navigator.of(context).pushNamed('/vehicles');
+    // The driver may have added or activated a vehicle there.
+    if (mounted) await AppServices.of(context).checkDriverVehicle?.call();
   }
 
   Future<void> _open(Trip trip) async {
@@ -77,6 +103,11 @@ class _DriverTripsScreenState extends State<DriverTripsScreen> {
         appBar: AppBar(
           title: const Text('My trips'),
           actions: [
+            IconButton(
+              tooltip: 'My vehicles',
+              icon: const Icon(Icons.garage_outlined),
+              onPressed: _openVehicles,
+            ),
             IconButton(
               tooltip: 'Saved routes',
               icon: const Icon(Icons.bookmarks_outlined),
