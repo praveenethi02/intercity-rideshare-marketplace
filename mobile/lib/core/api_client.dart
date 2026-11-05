@@ -59,11 +59,52 @@ class ApiClient {
   final http.Client _http;
 
   static const _timeout = Duration(seconds: 20);
+  static const _uploadTimeout = Duration(seconds: 90);
 
   Future<ApiResponse> get(String path, {Map<String, String>? query}) => _send('GET', path, query: query);
   Future<ApiResponse> post(String path, [Object? body]) => _send('POST', path, body: body);
   Future<ApiResponse> patch(String path, Object body) => _send('PATCH', path, body: body);
   Future<ApiResponse> delete(String path) => _send('DELETE', path);
+
+  /// Sends one file as multipart/form-data, refreshing the token on 401 like other requests.
+  Future<ApiResponse> upload(
+    String path, {
+    required List<int> bytes,
+    required String filename,
+    String fileField = 'file',
+    Map<String, String> fields = const {},
+  }) async {
+    var res = await _rawUpload(path, bytes, filename, fileField, fields);
+    final refresh = onUnauthorized;
+    if (res.statusCode == 401 && refresh != null && await refresh()) {
+      res = await _rawUpload(path, bytes, filename, fileField, fields);
+    }
+    return _parse(res);
+  }
+
+  Future<http.Response> _rawUpload(
+    String path,
+    List<int> bytes,
+    String filename,
+    String fileField,
+    Map<String, String> fields,
+  ) async {
+    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl$path'));
+    request.headers['Accept'] = 'application/json';
+    final token = await tokenProvider();
+    if (token != null && token.isNotEmpty) request.headers['Authorization'] = 'Bearer $token';
+    request.fields.addAll(fields);
+    request.files.add(http.MultipartFile.fromBytes(fileField, bytes, filename: filename));
+
+    try {
+      final streamed = await _http.send(request).timeout(_uploadTimeout);
+      return await http.Response.fromStream(streamed);
+    } on TimeoutException {
+      throw const ApiException(0, 'The upload took too long. Check your connection.');
+    } catch (_) {
+      throw ApiException(0, 'Cannot reach the server at $baseUrl');
+    }
+  }
 
   Future<ApiResponse> _send(String method, String path, {Object? body, Map<String, String>? query}) async {
     var res = await _rawSend(method, path, body: body, query: query);
