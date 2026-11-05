@@ -47,7 +47,20 @@ lib/
     screens/driver/         my trips, create (4 steps), detail, edit, active trip, saved routes
     screens/passenger/      search, results, ride detail
     screens/shared/         stop picker
+  features/driver/          Member 2
+    driver.dart             the only file other features import
+    models/  data/  widgets/
+    screens/                driver home, register, documents, verification, profile, earnings, trip history
 test/                       unit and widget tests
+```
+
+## Run it in a browser
+
+For a demo without an emulator. Port 3000 is already allowed by the backend's `CORS_ORIGINS`.
+
+```bash
+flutter create . --project-name rideshare_mobile --platforms web   # first time only: adds web/
+flutter run -d chrome --web-port 3000
 ```
 
 ## For other members
