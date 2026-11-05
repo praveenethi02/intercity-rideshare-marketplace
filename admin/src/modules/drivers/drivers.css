@@ -1,0 +1,52 @@
+/* Driver verification pages. All classes start with "dr-" so they never clash with other modules. */
+.dr-back { display: inline-block; margin-bottom: 12px; }
+
+.dr-link { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+
+.dr-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.dr-tab { padding: 6px 14px; border: 1px solid var(--neutral-200); border-radius: 10px; background: var(--neutral-0); color: inherit; font: inherit; font-weight: 500; cursor: pointer; }
+.dr-tab:hover { background: var(--neutral-100); }
+.dr-tab.active { border-color: var(--brand-500); background: var(--brand-500); color: var(--neutral-0); }
+
+.dr-table-wrap { overflow-x: auto; border: 1px solid var(--neutral-200); border-radius: 10px; background: var(--neutral-0); }
+.dr-table { width: 100%; border-collapse: collapse; }
+.dr-table th, .dr-table td { padding: 10px 14px; border-bottom: 1px solid var(--neutral-200); text-align: left; white-space: nowrap; }
+.dr-table th { background: var(--neutral-50); font-weight: 600; }
+.dr-table tbody tr:last-child td { border-bottom: 0; }
+.dr-table tbody tr:hover { background: var(--neutral-50); }
+
+.dr-pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 12px; }
+
+.dr-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+/* --warn-500 is hard to read on --warn-100, so pending uses dark text. */
+.dr-badge-pending { background: var(--warn-100); color: var(--neutral-900); }
+.dr-badge-approved { background: var(--success-100); color: var(--success-600); }
+.dr-badge-rejected { background: var(--danger-100); color: var(--danger-500); }
+
+.dr-header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
+.dr-header h1 { margin: 0; }
+
+.dr-ok { margin: 0 0 16px; padding: 10px 14px; border-radius: 10px; background: var(--success-100); color: var(--success-600); }
+
+.dr-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.dr-card { padding: 16px; border: 1px solid var(--neutral-200); border-radius: 10px; background: var(--neutral-0); }
+.dr-card h2, .dr-section-title h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.dr-card h2 { margin-bottom: 12px; }
+.dr-card dl { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; margin: 0; }
+.dr-card dt { color: var(--neutral-600); }
+.dr-card dd { margin: 0; overflow-wrap: anywhere; }
+
+.dr-section-title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 24px; }
+.dr-section-title + .muted { margin: 4px 0 12px; }
+
+.dr-docs { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.dr-doc { display: flex; flex-direction: column; gap: 4px; padding: 10px; border: 1px solid var(--neutral-200); border-radius: 10px; background: var(--neutral-0); }
+.dr-doc .muted { font-size: 12px; }
+.dr-preview { display: flex; align-items: center; justify-content: center; height: 140px; margin-bottom: 4px; padding: 0; overflow: hidden; border-radius: 6px; background: var(--neutral-100); color: var(--neutral-900); font-weight: 600; text-align: center; text-decoration: none; }
+.dr-preview img { width: 100%; height: 100%; object-fit: cover; }
+
+.dr-decision { margin-top: 24px; }
+.dr-decision p { margin: 0 0 12px; }
+.dr-reason { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; font-weight: 600; }
+.dr-reason textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--neutral-200); border-radius: 10px; font: inherit; font-weight: 400; resize: vertical; }
+.dr-actions { display: flex; flex-wrap: wrap; gap: 8px; }
