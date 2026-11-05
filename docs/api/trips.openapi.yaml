@@ -22,7 +22,7 @@ paths:
       tags: [Trips]
       operationId: createTrip
       summary: Create a trip (DRAFT) with ordered stops
-      description: Driver only. Departure must be 30 min to 60 days ahead. Vehicle must be APPROVED and owned by the driver.
+      description: Driver only. Departure must be 30 min to 60 days ahead. The driver profile must be APPROVED. The vehicle must be the driver's own, APPROVED and active, and seatsOffered can be at most its passengerSeats.
       requestBody:
         required: true
         content:
@@ -297,7 +297,7 @@ components:
             code:
               type: string
               example: TRIP_LOCKED
-              description: VALIDATION_ERROR, UNAUTHORIZED, FORBIDDEN, TRIP_NOT_FOUND, NOT_TRIP_OWNER, DRIVER_NOT_VERIFIED, VEHICLE_NOT_OWNED, VEHICLE_NOT_APPROVED, TOO_MANY_SEATS, DEPARTURE_TOO_SOON, DEPARTURE_TOO_FAR, INVALID_ARRIVAL, INVALID_STOPS, CARGO_CAPACITY_REQUIRED, TRIP_LOCKED, INVALID_STATUS_CHANGE, DEPARTURE_PASSED, TOO_EARLY_TO_START, INVALID_SEGMENT, ROUTE_NAME_TAKEN, SAVED_ROUTE_NOT_FOUND
+              description: VALIDATION_ERROR, UNAUTHORIZED, FORBIDDEN, TRIP_NOT_FOUND, NOT_TRIP_OWNER, DRIVER_NOT_VERIFIED, VEHICLE_NOT_OWNED, VEHICLE_NOT_APPROVED, VEHICLE_INACTIVE, TOO_MANY_SEATS, DEPARTURE_TOO_SOON, DEPARTURE_TOO_FAR, INVALID_ARRIVAL, INVALID_STOPS, CARGO_CAPACITY_REQUIRED, TRIP_LOCKED, INVALID_STATUS_CHANGE, DEPARTURE_PASSED, TOO_EARLY_TO_START, INVALID_SEGMENT, ROUTE_NAME_TAKEN, SAVED_ROUTE_NOT_FOUND
             details:
               description: For VALIDATION_ERROR a list of { field, message }, e.g. field body.stops
               oneOf:
