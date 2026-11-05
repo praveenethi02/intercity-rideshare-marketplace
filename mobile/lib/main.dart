@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'core/app_services.dart';
 import 'core/auth_service.dart';
 import 'core/formatters.dart';
+import 'features/driver/driver.dart';
 import 'features/trips/trips.dart';
 
 /// Runs the Trips & Routes feature against the real backend.
@@ -26,11 +28,13 @@ class RideshareApp extends StatefulWidget {
 class _RideshareAppState extends State<RideshareApp> {
   AuthService? _auth;
   TripRepository? _trips;
+  DriverRepository? _drivers;
   DriverVehicle? _vehicle;
 
   void _signedIn(AuthService auth, DriverVehicle? vehicle) => setState(() {
         _auth = auth;
         _trips = TripRepository(auth.api);
+        _drivers = DriverRepository(auth.api);
         _vehicle = vehicle;
       });
 
@@ -39,8 +43,17 @@ class _RideshareAppState extends State<RideshareApp> {
     setState(() {
       _auth = null;
       _trips = null;
+      _drivers = null;
       _vehicle = null;
     });
+  }
+
+  /// Registering makes this user a driver on the server, so the app shows the driver tabs too.
+  void _becameDriver() {
+    final auth = _auth;
+    final user = auth?.user;
+    if (auth == null || user == null) return;
+    setState(() => auth.user = AppUser(id: user.id, fullName: user.fullName, phone: user.phone, role: 'DRIVER'));
   }
 
   @override
@@ -62,7 +75,7 @@ class _RideshareAppState extends State<RideshareApp> {
             ),
       home: user == null
           ? LoginScreen(onSignedIn: _signedIn)
-          : HomeShell(user: user, onSignOut: _signOut),
+          : HomeShell(user: user, drivers: _drivers!, onSignOut: _signOut, onBecameDriver: _becameDriver),
     );
   }
 }
@@ -85,8 +98,16 @@ Future<void> _demoBookingHandler(BuildContext context, SegmentSelection s) async
 
 class HomeShell extends StatefulWidget {
   final AppUser user;
+  final DriverRepository drivers;
   final Future<void> Function() onSignOut;
-  const HomeShell({super.key, required this.user, required this.onSignOut});
+  final VoidCallback onBecameDriver;
+  const HomeShell({
+    super.key,
+    required this.user,
+    required this.drivers,
+    required this.onSignOut,
+    required this.onBecameDriver,
+  });
   @override
   State<HomeShell> createState() => _HomeShellState();
 }
@@ -95,9 +116,21 @@ class _HomeShellState extends State<HomeShell> {
   int _tab = 0;
 
   @override
+  void didUpdateWidget(HomeShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Becoming a driver adds "My trips" at the start, so stay on the same tab.
+    if (widget.user.isDriver && !oldWidget.user.isDriver) _tab += 1;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isDriver = widget.user.isDriver;
-    final pages = isDriver ? const [DriverTripsScreen(), SearchTripsScreen()] : const [SearchTripsScreen()];
+    final showDriverTab = widget.user.role != 'ADMIN';
+    final pages = <Widget>[
+      if (isDriver) const DriverTripsScreen(),
+      const SearchTripsScreen(),
+      if (showDriverTab) DriverHomeScreen(repository: widget.drivers, onBecameDriver: widget.onBecameDriver),
+    ];
     return Scaffold(
       body: IndexedStack(index: _tab, children: pages),
       bottomNavigationBar: NavigationBar(
@@ -113,6 +146,7 @@ class _HomeShellState extends State<HomeShell> {
         destinations: [
           if (isDriver) const NavigationDestination(icon: Icon(Icons.directions_car), label: 'My trips'),
           const NavigationDestination(icon: Icon(Icons.search), label: 'Find a ride'),
+          if (showDriverTab) const NavigationDestination(icon: Icon(Icons.badge_outlined), label: 'Driver'),
           const NavigationDestination(icon: Icon(Icons.logout), label: 'Sign out'),
         ],
       ),
@@ -144,8 +178,8 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  // Android emulator: 10.0.2.2 is your computer. iOS simulator: use localhost.
-  final _baseUrl = TextEditingController(text: 'http://10.0.2.2:4000/api/v1');
+  // Android emulator: 10.0.2.2 is your computer. iOS simulator and web: use localhost.
+  final _baseUrl = TextEditingController(text: kIsWeb ? 'http://localhost:4000/api/v1' : 'http://10.0.2.2:4000/api/v1');
   final _phone = TextEditingController();
   final _password = TextEditingController();
   final _vehicleId = TextEditingController(text: '00000000-0000-4000-8000-000000000001');
