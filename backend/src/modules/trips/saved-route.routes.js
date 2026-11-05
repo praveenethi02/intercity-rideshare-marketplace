@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const authenticate = require('../../middleware/authenticate');
 const requireRole = require('../../middleware/require-role');
+const { authRateLimit } = require('../../middleware/rate-limit');
 const validate = require('../../middleware/validate');
 const respond = require('../../utils/respond');
 const { ROLES } = require('../users/user.constants');
@@ -9,7 +10,7 @@ const tripService = require('./trip.service');
 
 const router = Router();
 
-router.use(authenticate, requireRole(ROLES.DRIVER));
+router.use(authRateLimit, authenticate, requireRole(ROLES.DRIVER));
 
 router.get('/', async (req, res) => {
   const savedRoutes = await tripService.listSavedRoutes(req.user);
