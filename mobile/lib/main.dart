@@ -1,16 +1,14 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'core/app_services.dart';
 import 'core/auth_service.dart';
 import 'core/formatters.dart';
+import 'features/auth/auth.dart';
 import 'features/driver/driver.dart';
 import 'features/trips/trips.dart';
 import 'features/vehicle/vehicle.dart';
 
 /// Runs the app against the real backend.
-/// Sign in with a phone and password registered through the auth API.
-/// Member 1's own login/registration screens can replace [LoginScreen] later.
 void main() => runApp(const RideshareApp());
 
 class RideshareApp extends StatefulWidget {
@@ -192,99 +190,4 @@ Future<bool> confirmSignOut(BuildContext context, String name) async {
     ),
   );
   return result ?? false;
-}
-
-class LoginScreen extends StatefulWidget {
-  final void Function(AuthService auth) onSignedIn;
-  const LoginScreen({super.key, required this.onSignedIn});
-  @override
-  State<LoginScreen> createState() => _LoginScreenState();
-}
-
-class _LoginScreenState extends State<LoginScreen> {
-  final _formKey = GlobalKey<FormState>();
-  // Android emulator: 10.0.2.2 is your computer. iOS simulator and web: use localhost.
-  final _baseUrl = TextEditingController(text: kIsWeb ? 'http://localhost:4000/api/v1' : 'http://10.0.2.2:4000/api/v1');
-  final _phone = TextEditingController();
-  final _password = TextEditingController();
-  bool _busy = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _baseUrl.dispose();
-    _phone.dispose();
-    _password.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    final auth = AuthService(_baseUrl.text.trim().replaceAll(RegExp(r'/+$'), ''));
-    try {
-      await auth.login(_phone.text.trim(), _password.text);
-      if (!mounted) return;
-      widget.onSignedIn(auth);
-    } catch (e) {
-      if (mounted) setState(() => _error = '$e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Sign in')),
-      body: Form(
-        key: _formKey,
-        child: ListView(padding: const EdgeInsets.all(16), children: [
-          TextFormField(
-            controller: _phone,
-            keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(labelText: 'Mobile number', hintText: '0771234567'),
-            validator: (v) => (v == null || v.trim().length < 9) ? 'Enter your mobile number' : null,
-          ),
-          TextFormField(
-            controller: _password,
-            obscureText: true,
-            decoration: const InputDecoration(labelText: 'Password'),
-            validator: (v) => (v == null || v.isEmpty) ? 'Enter your password' : null,
-            onFieldSubmitted: (_) => _submit(),
-          ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            ),
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed: _busy ? null : _submit,
-            child: _busy
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('Sign in'),
-          ),
-          const SizedBox(height: 12),
-          ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            title: const Text('Developer settings'),
-            children: [
-              TextFormField(
-                controller: _baseUrl,
-                decoration: const InputDecoration(
-                  labelText: 'API base URL',
-                  helperText: 'Android emulator: 10.0.2.2 · iOS simulator: localhost · phone: your computer\'s Wi-Fi IP',
-                ),
-                validator: (v) => (v == null || !v.startsWith('http')) ? 'Enter http(s)://…' : null,
-              ),
-            ],
-          ),
-        ]),
-      ),
-    );
-  }
 }
