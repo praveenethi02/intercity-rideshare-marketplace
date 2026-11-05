@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import AdminLayout from './layout/AdminLayout';
 import RequireAdmin from './layout/RequireAdmin';
+import driverRoutes from './modules/drivers/routes';
 import userRoutes from './modules/users/routes';
 import vehicleRoutes from './modules/vehicles/routes';
 import LoginPage from './pages/LoginPage';
@@ -8,7 +9,7 @@ import NotFoundPage from './pages/NotFoundPage';
 
 // Each module exports an array of { path, element, label }. Add yours here.
 // Routes with a label appear in the sidebar.
-const moduleRoutes = [...userRoutes, ...vehicleRoutes];
+const moduleRoutes = [...userRoutes, ...vehicleRoutes, ...driverRoutes];
 const navItems = moduleRoutes.filter((route) => route.label);
 
 export default function App() {
