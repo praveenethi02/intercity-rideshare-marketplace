@@ -1,0 +1,463 @@
+openapi: 3.0.3
+info:
+  title: Intercity Rideshare - Trips & Routes (Member 4)
+  version: 0.3.0
+  description: |
+    Trip & route endpoints (Member 4). Merge `paths` and `components.schemas` into
+    docs/api/openapi.yaml. Responses use { success, message, data, meta } and wrap the
+    result in a named key, e.g. data.trip, data.trips. Errors put their code in meta.code.
+    Validation errors are 422 VALIDATION_ERROR. Money is LKR cents (integer).
+servers:
+  - url: http://localhost:4000/api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: Trips
+  - name: Trip search
+  - name: Saved routes
+
+paths:
+  /trips:
+    post:
+      tags: [Trips]
+      operationId: createTrip
+      summary: Create a trip (DRAFT) with ordered stops
+      description: Driver only. Departure must be 30 min to 60 days ahead. Vehicle must be APPROVED and owned by the driver.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTripRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/TripResponse' }
+        '422': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+
+  /trips/mine:
+    get:
+      tags: [Trips]
+      operationId: listMyTrips
+      summary: Driver's own trips (newest departure first). The drivers module's GET /drivers/me/trips reads the same table.
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/TripStatus' } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { type: object, properties: { trips: { type: array, items: { $ref: '#/components/schemas/TripSummary' } } } }
+                      meta: { $ref: '#/components/schemas/PageMeta' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+
+  /trips/search:
+    get:
+      tags: [Trip search]
+      operationId: searchTrips
+      summary: Find SCHEDULED trips passing near pickup and drop points (route-segment matching)
+      parameters:
+        - { name: fromLat, in: query, required: true, schema: { type: number, minimum: -90, maximum: 90 } }
+        - { name: fromLng, in: query, required: true, schema: { type: number, minimum: -180, maximum: 180 } }
+        - { name: toLat, in: query, required: true, schema: { type: number, minimum: -90, maximum: 90 } }
+        - { name: toLng, in: query, required: true, schema: { type: number, minimum: -180, maximum: 180 } }
+        - { name: date, in: query, required: true, description: Local date (Asia/Colombo), schema: { type: string, format: date, example: '2026-11-20' } }
+        - { name: seats, in: query, schema: { type: integer, minimum: 1, maximum: 14, default: 1 } }
+        - { name: radiusKm, in: query, schema: { type: number, minimum: 0.5, maximum: 30, default: 5 } }
+        - { name: pricingMode, in: query, schema: { $ref: '#/components/schemas/PricingMode' } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: Matching trips, earliest first
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { type: object, properties: { results: { type: array, items: { $ref: '#/components/schemas/TripSearchResult' } } } }
+                      meta:
+                        allOf:
+                          - $ref: '#/components/schemas/PageMeta'
+                          - type: object
+                            properties:
+                              radiusKm: { type: number }
+        '422': { $ref: '#/components/responses/Error' }
+
+  /trips/{id}:
+    parameters:
+      - $ref: '#/components/parameters/TripId'
+    get:
+      tags: [Trips]
+      operationId: getTrip
+      summary: Trip with stops and seats per leg (DRAFT visible only to owner/admin)
+      responses:
+        '200': { $ref: '#/components/responses/TripResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Trips]
+      operationId: updateTrip
+      summary: Edit a trip
+      description: |
+        DRAFT - any field. SCHEDULED without reserved seats - estimatedArrivalAt,
+        basePriceCents, seatsOffered, notes. SCHEDULED with reserved seats -
+        estimatedArrivalAt, notes. Otherwise 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTripRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/TripResponse' }
+        '422': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+
+  /trips/{id}/availability:
+    parameters:
+      - $ref: '#/components/parameters/TripId'
+    get:
+      tags: [Trip search]
+      operationId: getSegmentAvailability
+      summary: Seats left and price for one segment (stop order numbers)
+      parameters:
+        - { name: fromStop, in: query, required: true, schema: { type: integer, minimum: 0 } }
+        - { name: toStop, in: query, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { type: object, properties: { availability: { $ref: '#/components/schemas/SegmentAvailability' } } }
+        '422': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+
+  /trips/{id}/publish:
+    parameters: [{ $ref: '#/components/parameters/TripId' }]
+    post:
+      tags: [Trips]
+      operationId: publishTrip
+      summary: DRAFT -> SCHEDULED
+      responses:
+        '200': { $ref: '#/components/responses/TripResponse' }
+        '409': { $ref: '#/components/responses/Error' }
+
+  /trips/{id}/start:
+    parameters: [{ $ref: '#/components/parameters/TripId' }]
+    post:
+      tags: [Trips]
+      operationId: startTrip
+      summary: SCHEDULED -> IN_PROGRESS (at most 30 min before departure)
+      responses:
+        '200': { $ref: '#/components/responses/TripResponse' }
+        '409': { $ref: '#/components/responses/Error' }
+
+  /trips/{id}/complete:
+    parameters: [{ $ref: '#/components/parameters/TripId' }]
+    post:
+      tags: [Trips]
+      operationId: completeTrip
+      summary: IN_PROGRESS -> COMPLETED
+      responses:
+        '200': { $ref: '#/components/responses/TripResponse' }
+        '409': { $ref: '#/components/responses/Error' }
+
+  /trips/{id}/cancel:
+    parameters: [{ $ref: '#/components/parameters/TripId' }]
+    post:
+      tags: [Trips]
+      operationId: cancelTrip
+      summary: DRAFT/SCHEDULED -> CANCELLED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3, maxLength: 300, example: Vehicle breakdown }
+      responses:
+        '200': { $ref: '#/components/responses/TripResponse' }
+        '422': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+
+  /saved-routes:
+    get:
+      tags: [Saved routes]
+      operationId: listSavedRoutes
+      summary: Driver's saved route templates
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { type: object, properties: { savedRoutes: { type: array, items: { $ref: '#/components/schemas/SavedRoute' } } } }
+    post:
+      tags: [Saved routes]
+      operationId: createSavedRoute
+      summary: Save a route template (name unique per driver)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, stops]
+              properties:
+                name: { type: string, minLength: 2, maxLength: 80 }
+                stops: { type: array, minItems: 2, maxItems: 15, items: { $ref: '#/components/schemas/StopInput' } }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data: { type: object, properties: { savedRoute: { $ref: '#/components/schemas/SavedRoute' } } }
+        '409': { $ref: '#/components/responses/Error' }
+
+  /saved-routes/{id}:
+    delete:
+      tags: [Saved routes]
+      operationId: deleteSavedRoute
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Deleted (data is null) }
+        '404': { $ref: '#/components/responses/Error' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  parameters:
+    TripId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    Page: { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+
+  responses:
+    TripResponse:
+      description: Trip
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data: { type: object, properties: { trip: { $ref: '#/components/schemas/Trip' } } }
+    Error:
+      description: Error (success = false)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  schemas:
+    Envelope:
+      type: object
+      required: [success, message, data]
+      properties:
+        success: { type: boolean, example: true }
+        message: { type: string, example: OK }
+        data: {}
+        meta: { type: object }
+
+    ErrorEnvelope:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        message: { type: string, example: Validation failed }
+        data: { nullable: true, example: null }
+        meta:
+          type: object
+          properties:
+            code:
+              type: string
+              example: TRIP_LOCKED
+              description: VALIDATION_ERROR, UNAUTHORIZED, FORBIDDEN, TRIP_NOT_FOUND, NOT_TRIP_OWNER, DRIVER_NOT_VERIFIED, VEHICLE_NOT_OWNED, VEHICLE_NOT_APPROVED, TOO_MANY_SEATS, DEPARTURE_TOO_SOON, DEPARTURE_TOO_FAR, INVALID_ARRIVAL, INVALID_STOPS, CARGO_CAPACITY_REQUIRED, TRIP_LOCKED, INVALID_STATUS_CHANGE, DEPARTURE_PASSED, TOO_EARLY_TO_START, INVALID_SEGMENT, ROUTE_NAME_TAKEN, SAVED_ROUTE_NOT_FOUND
+            details:
+              description: For VALIDATION_ERROR a list of { field, message }, e.g. field body.stops
+              oneOf:
+                - type: array
+                  items:
+                    type: object
+                    properties:
+                      field: { type: string, example: body.stops }
+                      message: { type: string }
+                - type: object
+
+    PageMeta:
+      type: object
+      properties:
+        page: { type: integer }
+        limit: { type: integer }
+        total: { type: integer }
+        totalPages: { type: integer }
+
+    TripStatus:
+      type: string
+      enum: [DRAFT, SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED]
+
+    PricingMode:
+      type: string
+      enum: [AUCTION, FIXED]
+
+    StopInput:
+      type: object
+      required: [name, lat, lng]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 120, example: Kadawatha }
+        lat: { type: number, example: 7.001 }
+        lng: { type: number, example: 79.953 }
+        plannedAt: { type: string, format: date-time }
+
+    TripStop:
+      type: object
+      properties:
+        order: { type: integer, example: 1 }
+        name: { type: string }
+        lat: { type: number }
+        lng: { type: number }
+        distanceFromStartKm: { type: number, example: 15.2 }
+        plannedAt: { type: string, format: date-time, nullable: true }
+
+    TripLeg:
+      type: object
+      description: Leg i joins stop i and stop i+1
+      properties:
+        legIndex: { type: integer }
+        seatsReserved: { type: integer }
+        seatsAvailable: { type: integer }
+
+    CreateTripRequest:
+      type: object
+      required: [vehicleId, pricingMode, departureAt, seatsOffered, basePriceCents, stops]
+      properties:
+        vehicleId: { type: string, format: uuid }
+        pricingMode: { $ref: '#/components/schemas/PricingMode' }
+        departureAt: { type: string, format: date-time, example: '2026-11-20T06:00:00+05:30' }
+        estimatedArrivalAt: { type: string, format: date-time }
+        seatsOffered: { type: integer, minimum: 1, maximum: 14 }
+        basePriceCents: { type: integer, minimum: 0, maximum: 10000000, description: Full-route seat price (FIXED) or starting bid (AUCTION) }
+        allowsCargo: { type: boolean, default: false }
+        cargoCapacityKg: { type: number, maximum: 2000, description: Required when allowsCargo is true }
+        notes: { type: string, maxLength: 500 }
+        stops: { type: array, minItems: 2, maxItems: 15, items: { $ref: '#/components/schemas/StopInput' } }
+
+    UpdateTripRequest:
+      type: object
+      minProperties: 1
+      properties:
+        departureAt: { type: string, format: date-time }
+        estimatedArrivalAt: { type: string, format: date-time }
+        seatsOffered: { type: integer, minimum: 1, maximum: 14 }
+        basePriceCents: { type: integer, minimum: 0, maximum: 10000000 }
+        allowsCargo: { type: boolean }
+        cargoCapacityKg: { type: number, maximum: 2000 }
+        notes: { type: string, maxLength: 500 }
+        stops: { type: array, minItems: 2, maxItems: 15, items: { $ref: '#/components/schemas/StopInput' } }
+
+    TripSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        driverId: { type: string, format: uuid }
+        vehicleId: { type: string, format: uuid }
+        pricingMode: { $ref: '#/components/schemas/PricingMode' }
+        status: { $ref: '#/components/schemas/TripStatus' }
+        originName: { type: string, example: Colombo Fort }
+        destinationName: { type: string, example: Kandy }
+        departureAt: { type: string, format: date-time }
+        estimatedArrivalAt: { type: string, format: date-time, nullable: true }
+        seatsOffered: { type: integer }
+        seatsAvailable: { type: integer, description: Free for the whole route }
+        basePriceCents: { type: integer }
+        distanceKm: { type: number, example: 122.2 }
+        allowsCargo: { type: boolean }
+        cargoCapacityKg: { type: number, nullable: true }
+        notes: { type: string, nullable: true }
+        cancelReason: { type: string, nullable: true }
+        publishedAt: { type: string, format: date-time, nullable: true }
+        startedAt: { type: string, format: date-time, nullable: true }
+        completedAt: { type: string, format: date-time, nullable: true }
+        cancelledAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    Trip:
+      allOf:
+        - $ref: '#/components/schemas/TripSummary'
+        - type: object
+          properties:
+            stops: { type: array, items: { $ref: '#/components/schemas/TripStop' } }
+            legs: { type: array, items: { $ref: '#/components/schemas/TripLeg' } }
+
+    TripSearchResult:
+      type: object
+      properties:
+        tripId: { type: string, format: uuid }
+        driverId: { type: string, format: uuid }
+        vehicleId: { type: string, format: uuid }
+        pricingMode: { $ref: '#/components/schemas/PricingMode' }
+        departureAt: { type: string, format: date-time }
+        allowsCargo: { type: boolean }
+        pickup:
+          type: object
+          properties:
+            stopOrder: { type: integer }
+            name: { type: string }
+            lat: { type: number }
+            lng: { type: number }
+            plannedAt: { type: string, format: date-time, nullable: true }
+            distanceFromYouKm: { type: number }
+        drop:
+          type: object
+          properties:
+            stopOrder: { type: integer }
+            name: { type: string }
+            lat: { type: number }
+            lng: { type: number }
+            plannedAt: { type: string, format: date-time, nullable: true }
+            distanceFromYourDestinationKm: { type: number }
+        segmentDistanceKm: { type: number }
+        seatsAvailable: { type: integer }
+        segmentPriceCents: { type: integer, description: FIXED seat price or AUCTION suggested starting bid for this segment }
+
+    SegmentAvailability:
+      type: object
+      properties:
+        tripId: { type: string, format: uuid }
+        fromStop: { type: integer }
+        toStop: { type: integer }
+        seatsAvailable: { type: integer }
+        segmentPriceCents: { type: integer }
+
+    SavedRoute:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        stops: { type: array, items: { $ref: '#/components/schemas/StopInput' } }
+        createdAt: { type: string, format: date-time }
