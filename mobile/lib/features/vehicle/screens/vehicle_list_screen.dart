@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
+import '../../../core/widgets/common_widgets.dart';
 import '../data/vehicle_api.dart';
 import '../data/vehicle_models.dart';
 import '../widgets/vehicle_widgets.dart';
@@ -9,74 +8,99 @@ import '../widgets/vehicle_widgets.dart';
 const kMaxVehicles = 3; // same limit as the API
 
 /// SCRUM-48 / SCRUM-56: "My vehicles" with status badges and the active toggle.
-class VehicleListScreen extends ConsumerWidget {
-  const VehicleListScreen({super.key});
+class VehicleListScreen extends StatefulWidget {
+  const VehicleListScreen({super.key, required this.api});
+  final VehicleApi api;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final vehicles = ref.watch(myVehiclesProvider);
-    final count = vehicles.valueOrNull?.length ?? 0;
+  State<VehicleListScreen> createState() => _VehicleListScreenState();
+}
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('My vehicles')),
-      floatingActionButton: vehicles.hasValue && count < kMaxVehicles
-          ? FloatingActionButton.extended(
-              onPressed: () async {
-                await context.push('/vehicles/new');
-                ref.invalidate(myVehiclesProvider);
-              },
-              icon: const Icon(Icons.add),
-              label: const Text('Add vehicle'),
-            )
-          : null,
-      body: vehicles.when(
-        loading: () => const LoadingView(),
-        error: (e, _) => ErrorView(message: apiErrorMessage(e), onRetry: () => ref.invalidate(myVehiclesProvider)),
-        data: (list) => RefreshIndicator(
-          onRefresh: () => ref.refresh(myVehiclesProvider.future),
-          child: list.isEmpty
-              ? ListView(children: const [
-                  SizedBox(height: 120),
-                  Icon(Icons.directions_car_outlined, size: 64),
-                  SizedBox(height: 12),
-                  Center(child: Text('No vehicles yet. Tap "Add vehicle" to register one.')),
-                ])
-              : ListView(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
-                  children: [
-                    for (final v in list) _VehicleCard(vehicle: v),
-                    if (list.length >= kMaxVehicles)
-                      const Padding(
-                        padding: EdgeInsets.all(8),
-                        child: Text('You can register up to 3 vehicles.', textAlign: TextAlign.center),
-                      ),
-                  ],
-                ),
-        ),
-      ),
+class _VehicleListScreenState extends State<VehicleListScreen> {
+  late Future<List<Vehicle>> _future = widget.api.myVehicles();
+
+  Future<void> _reload() async {
+    final future = widget.api.myVehicles();
+    setState(() {
+      _future = future;
+    });
+    await future.catchError((_) => <Vehicle>[]);
+  }
+
+  Future<void> _open(String route) async {
+    await Navigator.of(context).pushNamed(route);
+    if (mounted) _reload();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Vehicle>>(
+      future: _future,
+      builder: (context, snap) {
+        final loaded = snap.connectionState == ConnectionState.done && !snap.hasError;
+        return Scaffold(
+          appBar: AppBar(title: const Text('My vehicles')),
+          floatingActionButton: loaded && snap.data!.length < kMaxVehicles
+              ? FloatingActionButton.extended(
+                  onPressed: () => _open('/vehicles/new'),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add vehicle'),
+                )
+              : null,
+          body: snap.connectionState != ConnectionState.done
+              ? const Center(child: CircularProgressIndicator())
+              : snap.hasError
+                  ? ErrorView(error: snap.error!, onRetry: _reload)
+                  : RefreshIndicator(onRefresh: _reload, child: _list(snap.data!)),
+        );
+      },
+    );
+  }
+
+  Widget _list(List<Vehicle> vehicles) {
+    if (vehicles.isEmpty) {
+      return ListView(children: const [
+        SizedBox(height: 120),
+        EmptyView(icon: Icons.directions_car_outlined, message: 'No vehicles yet. Tap "Add vehicle" to register one.'),
+      ]);
+    }
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
+      children: [
+        for (final v in vehicles) _VehicleCard(api: widget.api, vehicle: v, onOpen: _open, onChanged: _reload),
+        if (vehicles.length >= kMaxVehicles)
+          const Padding(
+            padding: EdgeInsets.all(8),
+            child: Text('You can register up to 3 vehicles.', textAlign: TextAlign.center),
+          ),
+      ],
     );
   }
 }
 
-class _VehicleCard extends ConsumerStatefulWidget {
-  const _VehicleCard({required this.vehicle});
+class _VehicleCard extends StatefulWidget {
+  const _VehicleCard({required this.api, required this.vehicle, required this.onOpen, required this.onChanged});
+  final VehicleApi api;
   final Vehicle vehicle;
+  final Future<void> Function(String route) onOpen;
+  final Future<void> Function() onChanged;
 
   @override
-  ConsumerState<_VehicleCard> createState() => _VehicleCardState();
+  State<_VehicleCard> createState() => _VehicleCardState();
 }
 
-class _VehicleCardState extends ConsumerState<_VehicleCard> {
+class _VehicleCardState extends State<_VehicleCard> {
   bool _saving = false;
 
   Future<void> _toggle(bool value) async {
     setState(() => _saving = true);
     try {
-      await ref.read(vehicleApiProvider).setActive(widget.vehicle.id, value);
-      ref.invalidate(myVehiclesProvider);
-      if (mounted) showSnack(context, value ? 'Vehicle activated' : 'Vehicle deactivated');
+      await widget.api.setActive(widget.vehicle.id, value);
+      if (!mounted) return;
+      showSnack(context, value ? 'Vehicle activated' : 'Vehicle deactivated');
+      await widget.onChanged();
     } catch (e) {
-      if (mounted) showSnack(context, apiErrorMessage(e), error: true);
+      if (mounted) showSnack(context, '$e');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -126,21 +150,21 @@ class _VehicleCardState extends ConsumerState<_VehicleCard> {
                 IconButton(
                   tooltip: 'Edit',
                   icon: const Icon(Icons.edit_outlined),
-                  onPressed: () => context.push('/vehicles/${v.id}/edit'),
+                  onPressed: () => widget.onOpen('/vehicles/${v.id}/edit'),
                 ),
                 IconButton(
                   tooltip: 'Documents',
                   icon: const Icon(Icons.folder_outlined),
-                  onPressed: () => context.push('/vehicles/${v.id}/documents'),
+                  onPressed: () => widget.onOpen('/vehicles/${v.id}/documents'),
                 ),
                 IconButton(
                   tooltip: 'Verification',
                   icon: const Icon(Icons.verified_outlined),
-                  onPressed: () => context.push('/vehicles/${v.id}/verification'),
+                  onPressed: () => widget.onOpen('/vehicles/${v.id}/verification'),
                 ),
               ],
             ),
-            if (!v.isActive || v.verificationStatus != 'APPROVED')
+            if (!v.isUsableForTrips)
               Text(
                 'This vehicle cannot be used for trips until it is approved and active.',
                 style: text.bodySmall,
