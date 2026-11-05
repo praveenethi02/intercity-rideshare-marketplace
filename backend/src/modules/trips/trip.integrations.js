@@ -1,5 +1,4 @@
-// Checks that depend on other members' modules. Each one looks for the other module's table
-// first, so the trips module works before and after those modules are merged.
+// Checks that depend on other members' modules (drivers and vehicles).
 const db = require('../../db');
 const ApiError = require('../../utils/ApiError');
 
@@ -27,25 +26,36 @@ async function assertDriverEligible(userId, client = db) {
 }
 
 /**
- * Member 3 (vehicles): the vehicle must belong to the driver and be APPROVED, and the driver's
- * own seat is not for sale. ASSUMED columns: vehicles(id, owner_user_id, status, seat_capacity).
- * Rename them here to match the vehicles migration when it is merged.
+ * Member 3 (vehicles): the vehicle must belong to the driver, be APPROVED and be active. This is
+ * the same rule as vehicleRepository.findUsable / vehicleService.getUsableVehicle, checked here
+ * column by column so the driver gets a specific error, and inside the caller's transaction.
+ *
+ * vehicles.passenger_seats is the number of seats the driver can sell. It already leaves out the
+ * driver's own seat (the vehicles table enforces 1 <= passenger_seats < total_seats), so a trip
+ * may offer up to passenger_seats seats.
  */
 async function assertVehicleUsable(driverUserId, vehicleId, seatsOffered, client = db) {
-  if (!(await tableExists('vehicles', client))) return;
   const { rows } = await client.query(
-    'SELECT owner_user_id, status, seat_capacity FROM vehicles WHERE id = $1',
+    `SELECT driver_user_id, verification_status, is_active, passenger_seats
+     FROM vehicles WHERE id = $1`,
     [vehicleId],
   );
   const vehicle = rows[0];
-  if (!vehicle || vehicle.owner_user_id !== driverUserId) {
+  if (!vehicle || vehicle.driver_user_id !== driverUserId) {
     throw new ApiError(403, 'VEHICLE_NOT_OWNED', 'This vehicle is not registered to you');
   }
-  if (vehicle.status !== 'APPROVED') {
+  if (vehicle.verification_status !== 'APPROVED') {
     throw new ApiError(403, 'VEHICLE_NOT_APPROVED', 'This vehicle is not approved yet');
   }
-  if (seatsOffered > vehicle.seat_capacity - 1) {
-    throw new ApiError(422, 'TOO_MANY_SEATS', `This vehicle can offer at most ${vehicle.seat_capacity - 1} seats`);
+  if (!vehicle.is_active) {
+    throw new ApiError(403, 'VEHICLE_INACTIVE', 'This vehicle is deactivated. Activate it before offering trips');
+  }
+  if (seatsOffered > vehicle.passenger_seats) {
+    throw new ApiError(
+      422,
+      'TOO_MANY_SEATS',
+      `This vehicle can offer at most ${vehicle.passenger_seats} seats`,
+    );
   }
 }
 
