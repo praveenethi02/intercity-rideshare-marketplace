@@ -66,32 +66,10 @@ The project is planned as six four-week sprints. Jira holds the live schedule, s
 
 ## Status
 
-In development. Work in progress is on feature branches.
-
-## Repository layout
-
-| Folder | Contents |
-| --- | --- |
-| [`backend/`](backend/README.md) | Node.js and Express REST API with PostgreSQL |
-
-The mobile app (`mobile/`), web and admin app (`web/`) and project documents (`docs/`) will be added here as they are developed.
+In development. Work in progress is on feature branches, and this branch does not contain application code yet.
 
 ## Branches
 
 - `main`: released code.
 - `development`: integration branch, where merged work is tested.
 - `feature/SCRUM-<number>-<short-name>`: one branch per feature, created from `development`.
-
-## Workflow
-
-1. Update `development` and create a feature branch from it:
-
-   ```bash
-   git checkout development
-   git pull
-   git checkout -b feature/SCRUM-38-driver-registration
-   ```
-
-2. Commit with the Jira key in the message, for example `feat(driver): add driver registration` and `Refs: SCRUM-38`.
-3. Push the branch and open a pull request into `development`.
-4. Merge after review and passing tests.
