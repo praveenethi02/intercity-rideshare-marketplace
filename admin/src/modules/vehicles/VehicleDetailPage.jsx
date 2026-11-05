@@ -15,13 +15,12 @@ export default function VehicleDetailPage() {
   const [docDecisions, setDocDecisions] = useState({}); // { [docId]: 'ACCEPTED' | 'REJECTED' }
   const [reason, setReason] = useState('');
 
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
+  const fetchVehicle = useCallback(() => {
     vehiclesApi
       .get(id)
       .then((res) => {
         setVehicle(res.data);
+        setError(null);
         setDocDecisions({});
         setReason('');
       })
@@ -29,7 +28,13 @@ export default function VehicleDetailPage() {
       .finally(() => setLoading(false));
   }, [id]);
 
-  useEffect(load, [load]);
+  useEffect(fetchVehicle, [fetchVehicle]);
+
+  const load = () => {
+    setLoading(true);
+    setError(null);
+    fetchVehicle();
+  };
 
   const run = async (call, successText) => {
     setBusy(true);
