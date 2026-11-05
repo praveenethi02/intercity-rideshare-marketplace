@@ -160,23 +160,20 @@ describe('PATCH /api/v1/admin/vehicles/:id/status', () => {
   });
 
   describe('with the agreed trips table', () => {
-    // The trip module is not merged yet, so this creates just the columns the rule reads.
-    beforeAll(() =>
-      db.exec(`
-        CREATE TABLE trips (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          vehicle_id UUID NOT NULL,
-          status TEXT NOT NULL
-        )
-      `),
-    );
-    afterAll(() => db.exec('DROP TABLE trips'));
+    // The trips table comes from the trip module's migration (401_create_trip_tables.sql).
+    const addTrip = (driverId, vehicleId, status) =>
+      db.query(
+        `INSERT INTO trips (driver_user_id, vehicle_id, pricing_mode, origin_name, destination_name,
+           departure_at, seats_offered, seats_available, base_price_cents, distance_m, status)
+         VALUES ($1, $2, 'AUCTION', 'Kandy', 'Colombo', now() + interval '1 hour', 3, 3, 150000, 116000, $3)`,
+        [driverId, vehicleId, status],
+      );
 
     test('409 when the vehicle has a SCHEDULED trip', async () => {
       const d = await f.driver();
       const a = await f.admin();
       const v = await f.approvedVehicle(d.accessToken, a.accessToken);
-      await db.query("INSERT INTO trips (vehicle_id, status) VALUES ($1, 'SCHEDULED')", [v.id]);
+      await addTrip(d.user.id, v.id, 'SCHEDULED');
 
       const res = await api().patch(`/api/v1/vehicles/${v.id}/active`).set(auth(d.accessToken)).send({ isActive: false }).expect(409);
       expect(res.body.meta.code).toBe('INVALID_STATE');
@@ -190,7 +187,7 @@ describe('PATCH /api/v1/admin/vehicles/:id/status', () => {
     test('a COMPLETED trip does not block deactivation', async () => {
       const d = await f.driver();
       const v = await f.createVehicle(d.accessToken);
-      await db.query("INSERT INTO trips (vehicle_id, status) VALUES ($1, 'COMPLETED')", [v.id]);
+      await addTrip(d.user.id, v.id, 'COMPLETED');
       await api().patch(`/api/v1/vehicles/${v.id}/active`).set(auth(d.accessToken)).send({ isActive: false }).expect(200);
     });
   });
