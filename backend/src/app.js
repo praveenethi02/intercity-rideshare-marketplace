@@ -9,6 +9,9 @@ const { notFound, errorHandler } = require('./middleware/error');
 const authRoutes = require('./modules/auth/auth.routes');
 const userRoutes = require('./modules/users/user.routes');
 const adminRoutes = require('./modules/admin/admin.routes');
+const { router: driverRoutes } = require('./modules/drivers/driver.routes');
+const driverAdminRoutes = require('./modules/drivers/driver.admin.routes');
+const fileRoutes = require('./modules/files/file.routes');
 
 function createApp() {
   const app = express();
@@ -35,6 +38,9 @@ function createApp() {
 
   app.use('/api/v1/auth', authRoutes);
   app.use('/api/v1/users', userRoutes);
+  app.use('/api/v1/drivers', driverRoutes);
+  app.use('/api/v1/files', fileRoutes);
+  app.use('/api/v1/admin', driverAdminRoutes);
   app.use('/api/v1/admin', adminRoutes);
 
   app.use(notFound);
