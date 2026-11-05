@@ -1,0 +1,59 @@
+/* Vehicles admin pages — all classes start with "vh-" so they never clash with other modules. */
+.vh-page { padding: 24px; max-width: 1200px; font-family: system-ui, sans-serif; }
+.vh-page h1 { margin: 8px 0 16px; }
+.vh-page h2 { font-size: 18px; margin: 20px 0 10px; }
+.vh-muted { color: #6b7280; font-size: 13px; }
+
+.vh-tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.vh-tabs button { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; }
+.vh-tabs button.active { background: #1f2937; color: #fff; border-color: #1f2937; }
+
+.vh-filters { display: flex; gap: 8px; margin-bottom: 12px; }
+.vh-filters input { flex: 1; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; }
+.vh-filters select, .vh-filters button { padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; }
+
+.vh-table { width: 100%; border-collapse: collapse; background: #fff; }
+.vh-table th, .vh-table td { text-align: left; padding: 10px; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
+.vh-table th { background: #f9fafb; font-weight: 600; }
+.vh-row { cursor: pointer; }
+.vh-row:hover { background: #f3f4f6; }
+
+.vh-pager { display: flex; gap: 12px; align-items: center; justify-content: flex-end; margin-top: 12px; }
+
+.vh-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.vh-badge-pending, .vh-badge-uploaded { background: #fff7ed; color: #c2410c; }
+.vh-badge-approved, .vh-badge-accepted { background: #ecfdf5; color: #047857; }
+.vh-badge-rejected { background: #fef2f2; color: #b91c1c; }
+.vh-badge-not_submitted { background: #f3f4f6; color: #4b5563; }
+
+.vh-header { display: flex; align-items: center; gap: 12px; }
+.vh-active { color: #047857; font-weight: 600; }
+.vh-inactive { color: #b91c1c; font-weight: 600; }
+
+.vh-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.vh-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-top: 12px; }
+.vh-card dl { display: grid; grid-template-columns: 150px 1fr; gap: 6px 12px; margin: 0; }
+.vh-card dt { color: #6b7280; }
+.vh-card dd { margin: 0; }
+
+.vh-docs { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.vh-doc { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; background: #fff; display: flex; flex-direction: column; gap: 6px; }
+.vh-preview { display: block; height: 140px; border-radius: 6px; overflow: hidden; background: #f3f4f6; }
+.vh-preview img { width: 100%; height: 100%; object-fit: cover; }
+.vh-pdf { height: 100%; display: flex; align-items: center; justify-content: center; color: #374151; font-weight: 600; }
+.vh-doc-title { font-weight: 600; font-size: 14px; }
+.vh-doc-actions { display: flex; gap: 6px; }
+
+.vh-page button { cursor: pointer; padding: 6px 12px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; }
+.vh-page button:disabled { opacity: 0.5; cursor: not-allowed; }
+.vh-page button.primary { background: #047857; color: #fff; border-color: #047857; }
+.vh-page button.danger { color: #b91c1c; border-color: #fca5a5; }
+.vh-page button.selected { background: #047857; color: #fff; }
+.vh-page button.selected.danger { background: #b91c1c; color: #fff; }
+
+.vh-decision textarea { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; box-sizing: border-box; }
+.vh-actions { display: flex; gap: 8px; margin-top: 10px; }
+
+.vh-error { background: #fef2f2; color: #b91c1c; padding: 10px; border-radius: 6px; margin: 10px 0; }
+.vh-ok { background: #ecfdf5; color: #047857; padding: 10px; border-radius: 6px; margin: 10px 0; }
+.vh-warn { background: #fff7ed; color: #c2410c; padding: 10px; border-radius: 6px; margin-bottom: 10px; }
