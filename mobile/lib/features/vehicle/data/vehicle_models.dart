@@ -66,6 +66,9 @@ class Vehicle {
   String get title => '$make $model ($year)';
   bool get canSubmit => verificationStatus == 'NOT_SUBMITTED' || verificationStatus == 'REJECTED';
 
+  /// Same rule as the API: only an APPROVED, active vehicle can be used for trips.
+  bool get isUsableForTrips => verificationStatus == 'APPROVED' && isActive;
+
   factory Vehicle.fromJson(Map<String, dynamic> j) => Vehicle(
         id: j['id'] as String,
         vehicleType: j['vehicleType'] as String,
@@ -125,6 +128,28 @@ class VerificationInfo {
         missingDocuments: (j['missingDocuments'] as List? ?? const []).cast<String>(),
         rejectionReason: j['rejectionReason'] as String?,
       );
+}
+
+/// The vehicle a driver's new trips use: their oldest approved, active vehicle.
+Vehicle? usableVehicle(List<Vehicle> vehicles) {
+  for (final vehicle in vehicles) {
+    if (vehicle.isUsableForTrips) return vehicle;
+  }
+  return null;
+}
+
+/// Explains why a driver with these vehicles cannot create a trip yet.
+String noUsableVehicleMessage(List<Vehicle> vehicles) {
+  if (vehicles.isEmpty) {
+    return 'You have no vehicles yet. Add a vehicle and get it approved before creating a trip.';
+  }
+  if (vehicles.any((v) => v.verificationStatus == 'APPROVED')) {
+    return 'Your approved vehicle is not active. Activate it before creating a trip.';
+  }
+  if (vehicles.any((v) => v.verificationStatus == 'PENDING')) {
+    return 'Your vehicle is waiting for admin approval. You can create a trip once it is approved.';
+  }
+  return 'You have no approved vehicle. Submit a vehicle for approval before creating a trip.';
 }
 
 /// All document types, in the order the documents screen shows them.

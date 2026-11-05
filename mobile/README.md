@@ -33,8 +33,6 @@ Sign in with a phone number and password registered through the API:
 Android blocks plain `http` by default. For local testing only, add
 `android:usesCleartextTraffic="true"` to `<application>` in `android/app/src/main/AndroidManifest.xml`.
 
-Until the vehicles module exists, a driver types any UUID as the vehicle ID in *Developer settings*.
-
 ## Layout
 
 ```
@@ -51,6 +49,11 @@ lib/
     driver.dart             the only file other features import
     models/  data/  widgets/
     screens/                driver home, register, documents, verification, profile, earnings, trip history
+  features/vehicle/         Member 3
+    vehicle.dart            the only file other features import
+    vehicle_routes.dart     named routes under /vehicles, used by MaterialApp.onGenerateRoute
+    data/  widgets/
+    screens/                my vehicles, add/edit, documents, verification
 test/                       unit and widget tests
 ```
 
@@ -69,6 +72,7 @@ flutter run -d chrome --web-port 3000
   repository, the driver's vehicle and the booking hook.
 - **Booking / Auction:** set `onBookSegment` in `main.dart`. It receives a `SegmentSelection`
   (trip, pickup and drop stop, seats, price) when a passenger taps *Book* or *Place a bid*.
-- **Vehicles:** set `driverVehicleId` and `vehicleSeatCapacity` from the driver's approved vehicle.
+- **Vehicles:** `main.dart` loads the driver's first approved, active vehicle and sets
+  `driverVehicleId` and `vehicleSeatCapacity`. Without one, a driver cannot create a trip.
 - **Auth (Member 1):** replace `LoginScreen` with the real sign-in and registration screens, and
   keep the refresh token in secure storage.
