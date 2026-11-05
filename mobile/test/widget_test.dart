@@ -8,4 +8,14 @@ void main() {
     expect(find.text('Mobile number'), findsOneWidget);
     expect(find.text('Password'), findsOneWidget);
   });
+
+  testWidgets('sign-in has no manual vehicle settings', (tester) async {
+    await tester.pumpWidget(const RideshareApp());
+    await tester.tap(find.text('Developer settings'));
+    await tester.pumpAndSettle();
+    expect(find.text('API base URL'), findsOneWidget);
+    expect(find.textContaining('Vehicle ID'), findsNothing);
+    expect(find.textContaining('Vehicle seats'), findsNothing);
+    expect(find.text('00000000-0000-4000-8000-000000000001'), findsNothing);
+  });
 }
