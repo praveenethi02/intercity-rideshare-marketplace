@@ -1,54 +1,68 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
+import '../../../core/widgets/common_widgets.dart';
 import '../data/vehicle_api.dart';
 import '../data/vehicle_models.dart';
 import '../widgets/vehicle_widgets.dart';
 
 /// SCRUM-48..52: add / edit a vehicle. [vehicleId] == null -> add mode.
-class VehicleFormScreen extends ConsumerWidget {
-  const VehicleFormScreen({super.key, this.vehicleId});
+class VehicleFormScreen extends StatefulWidget {
+  const VehicleFormScreen({super.key, required this.api, this.vehicleId});
+  final VehicleApi api;
   final String? vehicleId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final types = ref.watch(vehicleTypesProvider);
-    final vehicle = vehicleId == null ? null : ref.watch(vehicleProvider(vehicleId!));
-    final title = vehicleId == null ? 'Add vehicle' : 'Edit vehicle';
+  State<VehicleFormScreen> createState() => _VehicleFormScreenState();
+}
 
-    // wait for the type list (and the vehicle when editing)
-    final error = types.error ?? vehicle?.error;
-    final loading = types.isLoading || (vehicle?.isLoading ?? false);
+class _VehicleFormScreenState extends State<VehicleFormScreen> {
+  // Wait for the type list (and the vehicle when editing).
+  late Future<(List<VehicleTypeConfig>, Vehicle?)> _future = _load();
 
+  Future<(List<VehicleTypeConfig>, Vehicle?)> _load() async {
+    final id = widget.vehicleId;
+    final types = await widget.api.getTypes();
+    return (types, id == null ? null : await widget.api.getVehicle(id));
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: error != null
-          ? ErrorView(
-              message: apiErrorMessage(error),
-              onRetry: () {
-                ref.invalidate(vehicleTypesProvider);
-                if (vehicleId != null) ref.invalidate(vehicleProvider(vehicleId!));
-              },
-            )
-          : loading
-              ? const LoadingView()
-              : _VehicleForm(types: types.requireValue, existing: vehicle?.requireValue),
+      appBar: AppBar(title: Text(widget.vehicleId == null ? 'Add vehicle' : 'Edit vehicle')),
+      body: FutureBuilder<(List<VehicleTypeConfig>, Vehicle?)>(
+        future: _future,
+        builder: (context, snap) {
+          if (snap.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snap.hasError) {
+            return ErrorView(
+              error: snap.error!,
+              onRetry: () => setState(() {
+                _future = _load();
+              }),
+            );
+          }
+          final (types, vehicle) = snap.data!;
+          return _VehicleForm(api: widget.api, types: types, existing: vehicle);
+        },
+      ),
     );
   }
 }
 
-class _VehicleForm extends ConsumerStatefulWidget {
-  const _VehicleForm({required this.types, this.existing});
+class _VehicleForm extends StatefulWidget {
+  const _VehicleForm({required this.api, required this.types, this.existing});
+  final VehicleApi api;
   final List<VehicleTypeConfig> types;
   final Vehicle? existing;
 
   @override
-  ConsumerState<_VehicleForm> createState() => _VehicleFormState();
+  State<_VehicleForm> createState() => _VehicleFormState();
 }
 
-class _VehicleFormState extends ConsumerState<_VehicleForm> {
+class _VehicleFormState extends State<_VehicleForm> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _make, _model, _year, _color, _plate, _cargoKg, _cargoL;
   late String _type;
@@ -134,13 +148,13 @@ class _VehicleFormState extends ConsumerState<_VehicleForm> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    final api = ref.read(vehicleApiProvider);
+    final api = widget.api;
     final body = _body();
 
     if (_isEdit) {
       final changes = _changes(body);
       if (changes.isEmpty) {
-        context.pop();
+        Navigator.of(context).pop();
         return;
       }
       // Warn: these edits send an APPROVED vehicle back to admin review.
@@ -161,15 +175,13 @@ class _VehicleFormState extends ConsumerState<_VehicleForm> {
         if (go != true) return;
       }
       await _run(() => api.update(_existing!.id, changes), (v) {
-        refreshVehicle(ref, v.id);
         showSnack(context, 'Vehicle updated');
-        context.pop();
+        Navigator.of(context).pop();
       });
     } else {
       await _run(() => api.create(body), (v) {
-        ref.invalidate(myVehiclesProvider);
         showSnack(context, 'Vehicle added. Now upload its documents.');
-        context.pushReplacement('/vehicles/${v.id}/documents');
+        Navigator.of(context).pushReplacementNamed('/vehicles/${v.id}/documents');
       });
     }
   }
@@ -180,7 +192,7 @@ class _VehicleFormState extends ConsumerState<_VehicleForm> {
       final v = await call();
       if (mounted) onDone(v);
     } catch (e) {
-      if (mounted) showSnack(context, apiErrorMessage(e), error: true);
+      if (mounted) showSnack(context, '$e');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -228,7 +240,7 @@ class _VehicleFormState extends ConsumerState<_VehicleForm> {
                 ),
               ),
             DropdownButtonFormField<String>(
-              value: _type,
+              initialValue: _type,
               decoration: const InputDecoration(labelText: 'Vehicle type'),
               items: [
                 for (final t in widget.types)
