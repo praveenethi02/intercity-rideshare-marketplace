@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
+import 'core/api_client.dart';
 import 'core/app_services.dart';
 import 'core/auth_service.dart';
 import 'core/formatters.dart';
+import 'core/session_store.dart';
+import 'core/widgets/common_widgets.dart';
 import 'features/auth/auth.dart';
 import 'features/driver/driver.dart';
 import 'features/trips/trips.dart';
@@ -12,7 +16,12 @@ import 'features/vehicle/vehicle.dart';
 void main() => runApp(const RideshareApp());
 
 class RideshareApp extends StatefulWidget {
-  const RideshareApp({super.key});
+  final SessionStore store;
+
+  /// Lets tests answer the API calls.
+  final http.Client? httpClient;
+
+  const RideshareApp({super.key, this.store = const SecureSessionStore(), this.httpClient});
   @override
   State<RideshareApp> createState() => _RideshareAppState();
 }
@@ -23,10 +32,61 @@ class _RideshareAppState extends State<RideshareApp> {
   DriverRepository? _drivers;
   VehicleApi? _vehicles;
   Vehicle? _vehicle;
+  String? _baseUrl;
+  bool _restoring = true;
+  String? _restoreError;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreSession();
+  }
+
+  /// Signs the user back in if a refresh token was saved the last time the app ran.
+  Future<void> _restoreSession() async {
+    final saved = await widget.store.read();
+    final baseUrl = saved.baseUrl;
+    final refreshToken = saved.refreshToken;
+    if (!mounted) return;
+    _baseUrl = baseUrl;
+    if (baseUrl == null || refreshToken == null) {
+      setState(() => _restoring = false);
+      return;
+    }
+
+    final auth = AuthService(baseUrl, httpClient: widget.httpClient, store: widget.store);
+    try {
+      await auth.restore(refreshToken);
+      if (!mounted) return;
+      setState(() => _restoring = false);
+      _signedIn(auth);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _restoring = false;
+        // An expired session goes to sign in. A temporary problem should not sign the user out.
+        _restoreError = e.isTemporary ? e.message : null;
+      });
+    }
+  }
+
+  void _retryRestore() {
+    setState(() {
+      _restoring = true;
+      _restoreError = null;
+    });
+    _restoreSession();
+  }
+
+  Future<void> _useAnotherAccount() async {
+    await widget.store.clearToken();
+    if (mounted) setState(() => _restoreError = null);
+  }
 
   void _signedIn(AuthService auth) {
     setState(() {
       _auth = auth;
+      _baseUrl = auth.baseUrl;
       _trips = TripRepository(auth.api);
       _drivers = DriverRepository(auth.api);
       _vehicles = VehicleApi(auth.api);
@@ -96,9 +156,33 @@ class _RideshareAppState extends State<RideshareApp> {
               child: child!,
             ),
       onGenerateRoute: (settings) => _vehicles == null ? null : vehicleRoute(settings, _vehicles!),
-      home: user == null
-          ? LoginScreen(onSignedIn: _signedIn)
-          : HomeShell(user: user, drivers: _drivers!, onSignOut: _signOut, onBecameDriver: _becameDriver),
+      home: _home(user),
+    );
+  }
+
+  Widget _home(AppUser? user) {
+    if (user != null) {
+      return HomeShell(user: user, drivers: _drivers!, onSignOut: _signOut, onBecameDriver: _becameDriver);
+    }
+    if (_restoring) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    final error = _restoreError;
+    if (error != null) {
+      return Scaffold(
+        body: SafeArea(
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            ErrorView(error: error, onRetry: _retryRestore),
+            TextButton(onPressed: _useAnotherAccount, child: const Text('Sign in with another account')),
+          ]),
+        ),
+      );
+    }
+    return LoginScreen(
+      onSignedIn: _signedIn,
+      store: widget.store,
+      initialBaseUrl: _baseUrl,
+      httpClient: widget.httpClient,
     );
   }
 }

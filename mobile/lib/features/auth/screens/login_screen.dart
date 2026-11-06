@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../../../core/api_client.dart';
 import '../../../core/auth_service.dart';
+import '../../../core/session_store.dart';
 import '../../../core/widgets/common_widgets.dart';
 import '../widgets/auth_widgets.dart';
 import 'forgot_password_screen.dart';
@@ -14,10 +15,16 @@ import 'verify_phone_screen.dart';
 class LoginScreen extends StatefulWidget {
   final void Function(AuthService auth) onSignedIn;
 
+  /// Keeps the user signed in after the app closes.
+  final SessionStore? store;
+
+  /// The API address used last time, if any.
+  final String? initialBaseUrl;
+
   /// Lets tests answer the API calls.
   final http.Client? httpClient;
 
-  const LoginScreen({super.key, required this.onSignedIn, this.httpClient});
+  const LoginScreen({super.key, required this.onSignedIn, this.store, this.initialBaseUrl, this.httpClient});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -26,7 +33,9 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   // Android emulator: 10.0.2.2 is your computer. iOS simulator and web: use localhost.
-  final _baseUrl = TextEditingController(text: kIsWeb ? 'http://localhost:4000/api/v1' : 'http://10.0.2.2:4000/api/v1');
+  late final _baseUrl = TextEditingController(
+    text: widget.initialBaseUrl ?? (kIsWeb ? 'http://localhost:4000/api/v1' : 'http://10.0.2.2:4000/api/v1'),
+  );
   final _phone = TextEditingController();
   final _password = TextEditingController();
   bool _busy = false;
@@ -46,7 +55,7 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _error = 'Check the API base URL in Developer settings.');
       return null;
     }
-    return AuthService(url, httpClient: widget.httpClient);
+    return AuthService(url, httpClient: widget.httpClient, store: widget.store);
   }
 
   void _open(Widget Function(AuthService auth) screen) {

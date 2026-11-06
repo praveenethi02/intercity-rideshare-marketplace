@@ -74,5 +74,5 @@ flutter run -d chrome --web-port 3000
   (trip, pickup and drop stop, seats, price) when a passenger taps *Book* or *Place a bid*.
 - **Vehicles:** `main.dart` loads the driver's first approved, active vehicle and sets
   `driverVehicleId` and `vehicleSeatCapacity`. Without one, a driver cannot create a trip.
-- **Auth (Member 1):** tokens are only kept in memory, so closing the app signs the user out. The
-  next step is to keep the refresh token in secure storage.
+- **Auth (Member 1):** the refresh token is kept in secure storage, so users stay signed in when the
+  app restarts. Only call the API through `auth.api`, because it refreshes and saves the tokens.
