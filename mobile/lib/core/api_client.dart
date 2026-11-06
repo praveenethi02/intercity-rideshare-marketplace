@@ -24,6 +24,9 @@ class ApiException implements Exception {
 
   bool get isNetworkError => statusCode == 0;
 
+  /// True when the same request may work later: no connection, rate limited or a server error.
+  bool get isTemporary => isNetworkError || statusCode == 429 || statusCode >= 500;
+
   @override
   String toString() {
     if (fieldErrors.isEmpty) return message;
