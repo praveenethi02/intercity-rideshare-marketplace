@@ -1,20 +1,27 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
+import 'core/api_client.dart';
 import 'core/app_services.dart';
 import 'core/auth_service.dart';
 import 'core/formatters.dart';
+import 'core/session_store.dart';
+import 'core/widgets/common_widgets.dart';
+import 'features/auth/auth.dart';
 import 'features/driver/driver.dart';
 import 'features/trips/trips.dart';
 import 'features/vehicle/vehicle.dart';
 
 /// Runs the app against the real backend.
-/// Sign in with a phone and password registered through the auth API.
-/// Member 1's own login/registration screens can replace [LoginScreen] later.
 void main() => runApp(const RideshareApp());
 
 class RideshareApp extends StatefulWidget {
-  const RideshareApp({super.key});
+  final SessionStore store;
+
+  /// Lets tests answer the API calls.
+  final http.Client? httpClient;
+
+  const RideshareApp({super.key, this.store = const SecureSessionStore(), this.httpClient});
   @override
   State<RideshareApp> createState() => _RideshareAppState();
 }
@@ -25,10 +32,61 @@ class _RideshareAppState extends State<RideshareApp> {
   DriverRepository? _drivers;
   VehicleApi? _vehicles;
   Vehicle? _vehicle;
+  String? _baseUrl;
+  bool _restoring = true;
+  String? _restoreError;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreSession();
+  }
+
+  /// Signs the user back in if a refresh token was saved the last time the app ran.
+  Future<void> _restoreSession() async {
+    final saved = await widget.store.read();
+    final baseUrl = saved.baseUrl;
+    final refreshToken = saved.refreshToken;
+    if (!mounted) return;
+    _baseUrl = baseUrl;
+    if (baseUrl == null || refreshToken == null) {
+      setState(() => _restoring = false);
+      return;
+    }
+
+    final auth = AuthService(baseUrl, httpClient: widget.httpClient, store: widget.store);
+    try {
+      await auth.restore(refreshToken);
+      if (!mounted) return;
+      setState(() => _restoring = false);
+      _signedIn(auth);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _restoring = false;
+        // An expired session goes to sign in. A temporary problem should not sign the user out.
+        _restoreError = e.isTemporary ? e.message : null;
+      });
+    }
+  }
+
+  void _retryRestore() {
+    setState(() {
+      _restoring = true;
+      _restoreError = null;
+    });
+    _restoreSession();
+  }
+
+  Future<void> _useAnotherAccount() async {
+    await widget.store.clearToken();
+    if (mounted) setState(() => _restoreError = null);
+  }
 
   void _signedIn(AuthService auth) {
     setState(() {
       _auth = auth;
+      _baseUrl = auth.baseUrl;
       _trips = TripRepository(auth.api);
       _drivers = DriverRepository(auth.api);
       _vehicles = VehicleApi(auth.api);
@@ -98,9 +156,33 @@ class _RideshareAppState extends State<RideshareApp> {
               child: child!,
             ),
       onGenerateRoute: (settings) => _vehicles == null ? null : vehicleRoute(settings, _vehicles!),
-      home: user == null
-          ? LoginScreen(onSignedIn: _signedIn)
-          : HomeShell(user: user, drivers: _drivers!, onSignOut: _signOut, onBecameDriver: _becameDriver),
+      home: _home(user),
+    );
+  }
+
+  Widget _home(AppUser? user) {
+    if (user != null) {
+      return HomeShell(user: user, drivers: _drivers!, onSignOut: _signOut, onBecameDriver: _becameDriver);
+    }
+    if (_restoring) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    final error = _restoreError;
+    if (error != null) {
+      return Scaffold(
+        body: SafeArea(
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            ErrorView(error: error, onRetry: _retryRestore),
+            TextButton(onPressed: _useAnotherAccount, child: const Text('Sign in with another account')),
+          ]),
+        ),
+      );
+    }
+    return LoginScreen(
+      onSignedIn: _signedIn,
+      store: widget.store,
+      initialBaseUrl: _baseUrl,
+      httpClient: widget.httpClient,
     );
   }
 }
@@ -192,99 +274,4 @@ Future<bool> confirmSignOut(BuildContext context, String name) async {
     ),
   );
   return result ?? false;
-}
-
-class LoginScreen extends StatefulWidget {
-  final void Function(AuthService auth) onSignedIn;
-  const LoginScreen({super.key, required this.onSignedIn});
-  @override
-  State<LoginScreen> createState() => _LoginScreenState();
-}
-
-class _LoginScreenState extends State<LoginScreen> {
-  final _formKey = GlobalKey<FormState>();
-  // Android emulator: 10.0.2.2 is your computer. iOS simulator and web: use localhost.
-  final _baseUrl = TextEditingController(text: kIsWeb ? 'http://localhost:4000/api/v1' : 'http://10.0.2.2:4000/api/v1');
-  final _phone = TextEditingController();
-  final _password = TextEditingController();
-  bool _busy = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _baseUrl.dispose();
-    _phone.dispose();
-    _password.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    final auth = AuthService(_baseUrl.text.trim().replaceAll(RegExp(r'/+$'), ''));
-    try {
-      await auth.login(_phone.text.trim(), _password.text);
-      if (!mounted) return;
-      widget.onSignedIn(auth);
-    } catch (e) {
-      if (mounted) setState(() => _error = '$e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Sign in')),
-      body: Form(
-        key: _formKey,
-        child: ListView(padding: const EdgeInsets.all(16), children: [
-          TextFormField(
-            controller: _phone,
-            keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(labelText: 'Mobile number', hintText: '0771234567'),
-            validator: (v) => (v == null || v.trim().length < 9) ? 'Enter your mobile number' : null,
-          ),
-          TextFormField(
-            controller: _password,
-            obscureText: true,
-            decoration: const InputDecoration(labelText: 'Password'),
-            validator: (v) => (v == null || v.isEmpty) ? 'Enter your password' : null,
-            onFieldSubmitted: (_) => _submit(),
-          ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            ),
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed: _busy ? null : _submit,
-            child: _busy
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('Sign in'),
-          ),
-          const SizedBox(height: 12),
-          ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            title: const Text('Developer settings'),
-            children: [
-              TextFormField(
-                controller: _baseUrl,
-                decoration: const InputDecoration(
-                  labelText: 'API base URL',
-                  helperText: 'Android emulator: 10.0.2.2 · iOS simulator: localhost · phone: your computer\'s Wi-Fi IP',
-                ),
-                validator: (v) => (v == null || !v.startsWith('http')) ? 'Enter http(s)://…' : null,
-              ),
-            ],
-          ),
-        ]),
-      ),
-    );
-  }
 }

@@ -1,8 +1,6 @@
 # Mobile app (Flutter)
 
-The Intercity Rideshare app. So far it has the **Trips & Routes** feature (Member 4) and a simple
-sign-in that uses the backend's `/auth/login`. The other modules add their screens under
-`lib/features/<name>/`.
+The Intercity Rideshare app. Each module adds its screens under `lib/features/<name>/`.
 
 ## Run it
 
@@ -17,10 +15,8 @@ flutter test
 flutter run
 ```
 
-Sign in with a phone number and password registered through the API:
-1. `POST /api/v1/auth/register` with `{ fullName, phone, password, role: "DRIVER" }`.
-2. With `SMS_PROVIDER=console`, the backend prints the OTP in its terminal.
-3. Send that code to `POST /auth/otp/verify`.
+Tap *Create an account* on the sign-in screen. With `SMS_PROVIDER=console`, the backend prints the
+registration and password reset codes in its terminal.
 
 **API address** (in *Developer settings* on the sign-in screen):
 
@@ -39,6 +35,10 @@ Android blocks plain `http` by default. For local testing only, add
 lib/
   main.dart                 sign-in + home with bottom tabs
   core/                     ApiClient (token refresh), AuthService, AppServices, formatters, widgets
+  features/auth/            Member 1
+    auth.dart               the only file other features import
+    widgets/
+    screens/                sign in, register, verify phone, forgot and reset password
   features/trips/           Member 4
     trips.dart              the only file other features import
     models/  data/  widgets/
@@ -74,5 +74,5 @@ flutter run -d chrome --web-port 3000
   (trip, pickup and drop stop, seats, price) when a passenger taps *Book* or *Place a bid*.
 - **Vehicles:** `main.dart` loads the driver's first approved, active vehicle and sets
   `driverVehicleId` and `vehicleSeatCapacity`. Without one, a driver cannot create a trip.
-- **Auth (Member 1):** replace `LoginScreen` with the real sign-in and registration screens, and
-  keep the refresh token in secure storage.
+- **Auth (Member 1):** the refresh token is kept in secure storage, so users stay signed in when the
+  app restarts. Only call the API through `auth.api`, because it refreshes and saves the tokens.
