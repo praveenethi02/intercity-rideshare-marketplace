@@ -57,6 +57,8 @@ Required before submit: `REGISTRATION_CERT`, `REVENUE_LICENSE`, `INSURANCE`, `PH
 | Type | Seats (incl. driver) | Max cargo kg | Max cargo L |
 |---|---|---|---|
 | CAR | 2–5 | 100 | 500 |
+| THREE_WHEELER | 2–4 | 150 | 300 |
+| MOTORBIKE | 2 | 20 | 50 |
 | SUV | 5–8 | 200 | 800 |
 | VAN | 5–15 | 800 | 3000 |
 | MINIBUS | 10–30 | 500 | 2000 |
@@ -71,7 +73,9 @@ Required before submit: `REGISTRATION_CERT`, `REVENUE_LICENSE`, `INSURANCE`, `PH
 Auth: `Bearer` token. Role `DRIVER` unless noted. Non-owners get **404** (ids of other drivers' vehicles are not revealed).
 
 ### GET /api/v1/vehicles/types  (any logged-in user)
-200 → `data: [{ type, label, minSeats, maxSeats, maxCargoKg, maxCargoVolumeL, allowsCargo }]`
+200 → `data: [{ type, label, minSeats, maxSeats, maxCargoKg, maxCargoVolumeL, allowsCargo, brands: [{ name, models: [string] }] }]`
+
+`brands` lists common makes and models for the app's dropdowns (`src/modules/vehicles/vehicleCatalog.js`). They are suggestions only: `make` and `model` still accept any text, so the app's "Other" option sends whatever the driver types.
 
 ### POST /api/v1/vehicles
 Body:

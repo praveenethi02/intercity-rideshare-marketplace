@@ -154,7 +154,7 @@ describe('phone verification', () => {
     await post('/auth/register', stranger);
     await age('2 minutes');
 
-    const owner = newUserData({ phone: '0771234567', fullName: 'Real Owner' });
+    const owner = newUserData({ phone: '0771234567', firstName: 'Real', lastName: 'Owner' });
     const res = await post('/auth/register', owner);
     expect(res.status).toBe(201);
     expect(res.body.data.user.fullName).toBe('Real Owner');

@@ -247,7 +247,7 @@ describe('driver profile (SCRUM-39)', () => {
 
   test('the public profile shortens the name and hides licence and NIC', async () => {
     const body = registration();
-    const { user, tokens } = await signedInUser({ fullName: 'Nimal Perera Silva' });
+    const { user, tokens } = await signedInUser({ firstName: 'Nimal', lastName: 'Perera Silva' });
     await post('/drivers', body, tokens.accessToken);
     const viewer = await signedInUser();
 

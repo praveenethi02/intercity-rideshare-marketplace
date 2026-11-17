@@ -10,12 +10,17 @@ const me = (token) => get('/users/me', token);
 
 describe('GET /users/me', () => {
   test('returns the signed-in user without the password hash', async () => {
-    const { user, tokens } = await signedInUser({ fullName: 'Kasun Perera' });
+    const { user, tokens } = await signedInUser({ firstName: 'Kasun', lastName: 'Perera' });
 
     const res = await me(tokens.accessToken);
 
     expect(res.status).toBe(200);
-    expect(res.body.data.user).toMatchObject({ id: user.id, fullName: 'Kasun Perera' });
+    expect(res.body.data.user).toMatchObject({
+      id: user.id,
+      firstName: 'Kasun',
+      lastName: 'Perera',
+      fullName: 'Kasun Perera',
+    });
     expect(JSON.stringify(res.body)).not.toMatch(/password/i);
   });
 
@@ -26,12 +31,33 @@ describe('GET /users/me', () => {
 
 describe('PATCH /users/me', () => {
   test('updates only the fields provided', async () => {
-    const { tokens } = await signedInUser({ fullName: 'Old Name', email: 'old@example.com' });
+    const { tokens } = await signedInUser({ firstName: 'Old', lastName: 'Name', email: 'old@example.com' });
+
+    const res = await patch('/users/me', tokens.accessToken, { firstName: 'New' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.user).toMatchObject({
+      firstName: 'New',
+      lastName: 'Name',
+      fullName: 'New Name',
+      email: 'old@example.com',
+    });
+  });
+
+  test('rebuilds the full name when the last name changes', async () => {
+    const { tokens } = await signedInUser({ firstName: 'Kasun', lastName: 'Perera' });
+
+    const res = await patch('/users/me', tokens.accessToken, { lastName: 'Silva' });
+
+    expect(res.body.data.user).toMatchObject({ firstName: 'Kasun', lastName: 'Silva', fullName: 'Kasun Silva' });
+  });
+
+  test('rejects the old fullName field', async () => {
+    const { tokens } = await signedInUser();
 
     const res = await patch('/users/me', tokens.accessToken, { fullName: 'New Name' });
 
-    expect(res.status).toBe(200);
-    expect(res.body.data.user).toMatchObject({ fullName: 'New Name', email: 'old@example.com' });
+    expect(res.status).toBe(422);
   });
 
   test('null clears an optional field', async () => {

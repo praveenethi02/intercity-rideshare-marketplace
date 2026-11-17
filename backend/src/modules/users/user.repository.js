@@ -10,24 +10,32 @@ async function findByPhone(phone, client = db) {
   return rows[0] || null;
 }
 
-async function create({ fullName, phone, email, passwordHash, role, status }, client = db) {
+/** The display name stored in full_name: "first last", or just the first name. */
+const joinName = (firstName, lastName) => [firstName, lastName].filter(Boolean).join(' ');
+
+async function create({ firstName, lastName = '', phone, email, passwordHash, role, status }, client = db) {
   const { rows } = await client.query(
-    `INSERT INTO users (full_name, phone, email, password_hash, role, status)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO users (first_name, last_name, full_name, phone, email, password_hash, role, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
-    [fullName, phone, email ?? null, passwordHash, role, status],
+    [firstName, lastName, joinName(firstName, lastName), phone, email ?? null, passwordHash, role, status],
   );
   return rows[0];
 }
 
 /** Replaces the details of a registration that was never verified. */
-async function updatePendingRegistration(id, { fullName, email, passwordHash, role }, client = db) {
+async function updatePendingRegistration(
+  id,
+  { firstName, lastName, email, passwordHash, role },
+  client = db,
+) {
   const { rows } = await client.query(
     `UPDATE users
-     SET full_name = $2, email = $3, password_hash = $4, role = $5, updated_at = now()
+     SET first_name = $2, last_name = $3, full_name = $4, email = $5, password_hash = $6, role = $7,
+         updated_at = now()
      WHERE id = $1 AND status = 'PENDING_VERIFICATION'
      RETURNING *`,
-    [id, fullName, email ?? null, passwordHash, role],
+    [id, firstName, lastName, joinName(firstName, lastName), email ?? null, passwordHash, role],
   );
   return rows[0] || null;
 }
@@ -50,20 +58,35 @@ async function updatePassword(id, passwordHash, client = db) {
   ]);
 }
 
-/** Updates only the fields provided. A null value clears an optional field. */
-async function updateProfile(id, { fullName, email, avatarUrl }, client = db) {
+/**
+ * Updates only the fields provided. A null value clears an optional field.
+ * full_name is rebuilt from the first and last names after either one changes.
+ */
+async function updateProfile(id, { firstName, lastName, email, avatarUrl }, client = db) {
   const { rows } = await client.query(
-    `UPDATE users
-     SET full_name = CASE WHEN $2 THEN $3 ELSE full_name END,
-         email = CASE WHEN $4 THEN $5 ELSE email END,
-         avatar_url = CASE WHEN $6 THEN $7 ELSE avatar_url END,
+    `WITH names AS (
+       SELECT CASE WHEN $2 THEN $3 ELSE first_name END AS first_name,
+              CASE WHEN $4 THEN $5 ELSE last_name END AS last_name
+       FROM users WHERE id = $1
+     )
+     UPDATE users
+     SET first_name = names.first_name,
+         last_name = names.last_name,
+         full_name = CASE WHEN $2 OR $4
+                          THEN btrim(names.first_name || ' ' || names.last_name)
+                          ELSE users.full_name END,
+         email = CASE WHEN $6 THEN $7 ELSE email END,
+         avatar_url = CASE WHEN $8 THEN $9 ELSE avatar_url END,
          updated_at = now()
-     WHERE id = $1
-     RETURNING *`,
+     FROM names
+     WHERE users.id = $1
+     RETURNING users.*`,
     [
       id,
-      fullName !== undefined,
-      fullName ?? null,
+      firstName !== undefined,
+      firstName ?? null,
+      lastName !== undefined,
+      lastName ?? null,
       email !== undefined,
       email ?? null,
       avatarUrl !== undefined,
@@ -120,6 +143,8 @@ async function search({ role, status, search: text, page, limit }, client = db) 
 function toPublicUser(user) {
   return {
     id: user.id,
+    firstName: user.first_name,
+    lastName: user.last_name,
     fullName: user.full_name,
     phone: user.phone,
     email: user.email,

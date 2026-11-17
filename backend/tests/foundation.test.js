@@ -56,7 +56,8 @@ describe('phone normalisation', () => {
 
 describe('user model', () => {
   const base = {
-    fullName: 'Test User',
+    firstName: 'Test',
+    lastName: 'User',
     phone: '+94771234567',
     passwordHash: 'hash',
     role: ROLES.PASSENGER,

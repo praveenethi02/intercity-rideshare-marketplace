@@ -16,6 +16,9 @@ describe('POST /auth/register', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.data.user).toMatchObject({
+      firstName: 'Test',
+      lastName: 'User',
+      fullName: 'Test User',
       phone: '+94771234567',
       email: 'test@example.com',
       role: 'PASSENGER',
@@ -24,18 +27,36 @@ describe('POST /auth/register', () => {
     expect(JSON.stringify(res.body)).not.toContain('password');
   });
 
-  test.each(['PASSENGER', 'DRIVER', 'CARGO_CUSTOMER'])('allows role %s', async (role) => {
-    const res = await post('/auth/register', newUserData({ role }));
+  test('trims the first and last names', async () => {
+    const res = await post('/auth/register', newUserData({ firstName: '  Kasun ', lastName: ' Perera  ' }));
 
     expect(res.status).toBe(201);
-    expect(res.body.data.user.role).toBe(role);
+    expect(res.body.data.user).toMatchObject({ firstName: 'Kasun', lastName: 'Perera', fullName: 'Kasun Perera' });
   });
 
-  test('cannot self-register as ADMIN', async () => {
-    const res = await post('/auth/register', newUserData({ role: 'ADMIN' }));
+  test.each([
+    ['firstName', { firstName: ' ' }],
+    ['lastName', { lastName: '' }],
+    ['firstName', { firstName: 'x'.repeat(51) }],
+  ])('rejects a missing or long %s', async (field, overrides) => {
+    const res = await post('/auth/register', newUserData(overrides));
 
     expect(res.status).toBe(422);
-    expect(res.body.meta.details[0].field).toBe('body.role');
+    expect(res.body.meta.details[0].field).toBe(`body.${field}`);
+  });
+
+  // Drivers register from inside the app, so sign up cannot choose a role at all.
+  test.each(['PASSENGER', 'DRIVER', 'CARGO_CUSTOMER', 'ADMIN'])('rejects a role (%s)', async (role) => {
+    const res = await post('/auth/register', newUserData({ role }));
+
+    expect(res.status).toBe(422);
+  });
+
+  test('rejects the old fullName field', async () => {
+    const { firstName, lastName, ...rest } = newUserData();
+    const res = await post('/auth/register', { ...rest, fullName: `${firstName} ${lastName}` });
+
+    expect(res.status).toBe(422);
   });
 
   test('rejects extra fields such as status', async () => {

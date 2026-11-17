@@ -14,6 +14,60 @@ describe('GET /api/v1/vehicles/types', () => {
     const car = res.body.data.find((t) => t.type === 'CAR');
     expect(car).toMatchObject({ minSeats: 2, maxSeats: 5, maxCargoKg: 100 });
   });
+
+  test('includes motorbikes and three-wheelers', async () => {
+    const { accessToken } = await f.driver();
+    const res = await api().get('/api/v1/vehicles/types').set(auth(accessToken)).expect(200);
+    const types = res.body.data.map((t) => t.type);
+    expect(types).toEqual(expect.arrayContaining(['MOTORBIKE', 'THREE_WHEELER']));
+    expect(res.body.data.find((t) => t.type === 'MOTORBIKE')).toMatchObject({ minSeats: 2, maxSeats: 2 });
+    expect(res.body.data.find((t) => t.type === 'THREE_WHEELER')).toMatchObject({ maxSeats: 4 });
+  });
+
+  test('lists brands and their models for each type, sorted by name', async () => {
+    const { accessToken } = await f.driver();
+    const res = await api().get('/api/v1/vehicles/types').set(auth(accessToken)).expect(200);
+    for (const type of res.body.data) {
+      expect(type.brands.length).toBeGreaterThan(0);
+      const names = type.brands.map((b) => b.name);
+      expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+      for (const brand of type.brands) expect(brand.models.length).toBeGreaterThan(0);
+    }
+    const threeWheeler = res.body.data.find((t) => t.type === 'THREE_WHEELER');
+    expect(threeWheeler.brands.find((b) => b.name === 'Bajaj').models).toContain('RE');
+  });
+});
+
+describe('POST /api/v1/vehicles (motorbikes and three-wheelers)', () => {
+  test('creates a motorbike with one passenger seat', async () => {
+    const { accessToken } = await f.driver();
+    const res = await api()
+      .post('/api/v1/vehicles')
+      .set(auth(accessToken))
+      .send(f.carPayload({ vehicleType: 'MOTORBIKE', make: 'Honda', model: 'Dio', totalSeats: 2, passengerSeats: 1, cargoCapacityKg: 10, cargoVolumeL: 20 }))
+      .expect(201);
+    expect(res.body.data).toMatchObject({ vehicleType: 'MOTORBIKE', totalSeats: 2, passengerSeats: 1 });
+  });
+
+  test('creates a three-wheeler with a make that is not in the list', async () => {
+    const { accessToken } = await f.driver();
+    const res = await api()
+      .post('/api/v1/vehicles')
+      .set(auth(accessToken))
+      .send(f.carPayload({ vehicleType: 'THREE_WHEELER', make: 'Mahindra', model: 'Alfa', totalSeats: 4, passengerSeats: 3, cargoCapacityKg: 100, cargoVolumeL: 200, plateNumber: 'QA-1234' }))
+      .expect(201);
+    expect(res.body.data).toMatchObject({ vehicleType: 'THREE_WHEELER', make: 'Mahindra', model: 'Alfa' });
+  });
+
+  test('rejects a motorbike with more than two seats', async () => {
+    const { accessToken } = await f.driver();
+    const res = await api()
+      .post('/api/v1/vehicles')
+      .set(auth(accessToken))
+      .send(f.carPayload({ vehicleType: 'MOTORBIKE', totalSeats: 3, passengerSeats: 2, cargoCapacityKg: 0, cargoVolumeL: 0 }))
+      .expect(422);
+    expect(JSON.stringify(res.body)).toContain('totalSeats');
+  });
 });
 
 describe('POST /api/v1/vehicles (create)', () => {

@@ -21,15 +21,18 @@ const newPassword = z
   });
 
 const fullName = z.string().trim().min(2).max(120);
+// 50 + space + 50 still fits the 120-character full_name column.
+const personName = z.string().trim().min(1, 'Required').max(50);
 const email = z.string().trim().toLowerCase().email().max(254);
 const selectableRole = z.enum(SELECTABLE_ROLES);
 
+// Everyone signs up as a passenger. A passenger becomes a driver in the app (POST /drivers).
 const register = z.strictObject({
-  fullName,
+  firstName: personName,
+  lastName: personName,
   phone,
   email: email.optional(),
   password: newPassword,
-  role: selectableRole,
 });
 
 const login = z.strictObject({
@@ -63,6 +66,7 @@ module.exports = {
   phone,
   newPassword,
   fullName,
+  personName,
   email,
   selectableRole,
   register,

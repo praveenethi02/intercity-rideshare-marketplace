@@ -5,13 +5,14 @@ import '../../../core/widgets/common_widgets.dart';
 import '../widgets/auth_widgets.dart';
 import 'verify_phone_screen.dart';
 
-/// The roles a user can pick. Same as SELECTABLE_ROLES in the backend.
-const _roles = {
-  'PASSENGER': 'Passenger',
-  'DRIVER': 'Driver',
-  'CARGO_CUSTOMER': 'Cargo',
-};
+/// Same rule as personName in the backend.
+String? validatePersonName(String? value, String label) {
+  final name = (value ?? '').trim();
+  if (name.isEmpty) return 'Enter your $label';
+  return name.length > 50 ? 'Use 50 characters or fewer' : null;
+}
 
+/// Everyone signs up as a passenger. Drivers register later from the Driver tab.
 class RegisterScreen extends StatefulWidget {
   final AuthService auth;
   final void Function(AuthService auth) onSignedIn;
@@ -23,22 +24,20 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _name = TextEditingController();
+  final _firstName = TextEditingController();
+  final _lastName = TextEditingController();
   final _phone = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _confirm = TextEditingController();
-  String _role = 'PASSENGER';
   bool _busy = false;
   String? _error;
 
   @override
   void dispose() {
-    _name.dispose();
-    _phone.dispose();
-    _email.dispose();
-    _password.dispose();
-    _confirm.dispose();
+    for (final controller in [_firstName, _lastName, _phone, _email, _password, _confirm]) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -52,11 +51,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final email = _email.text.trim();
     try {
       await widget.auth.register(
-        fullName: _name.text.trim(),
+        firstName: _firstName.text.trim(),
+        lastName: _lastName.text.trim(),
         phone: phone,
         email: email.isEmpty ? null : email,
         password: _password.text,
-        role: _role,
       );
       if (!mounted) return;
       await Navigator.of(context).push(
@@ -81,29 +80,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
           key: _formKey,
           child: AutofillGroup(
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Text('I want to join as', style: Theme.of(context).textTheme.labelLarge),
-              const SizedBox(height: 8),
-              SegmentedButton<String>(
-                showSelectedIcon: false,
-                segments: [
-                  for (final role in _roles.entries) ButtonSegment(value: role.key, label: Text(role.value)),
-                ],
-                selected: {_role},
-                onSelectionChanged: (selected) => setState(() => _role = selected.first),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _name,
-                autofillHints: const [AutofillHints.name],
-                textCapitalization: TextCapitalization.words,
-                textInputAction: TextInputAction.next,
-                decoration: const InputDecoration(labelText: 'Full name'),
-                validator: (v) {
-                  final name = (v ?? '').trim();
-                  if (name.length < 2) return 'Enter your full name';
-                  return name.length > 120 ? 'Use 120 characters or fewer' : null;
-                },
-              ),
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _firstName,
+                    autofillHints: const [AutofillHints.givenName],
+                    textCapitalization: TextCapitalization.words,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(labelText: 'First name'),
+                    validator: (v) => validatePersonName(v, 'first name'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextFormField(
+                    controller: _lastName,
+                    autofillHints: const [AutofillHints.familyName],
+                    textCapitalization: TextCapitalization.words,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(labelText: 'Last name'),
+                    validator: (v) => validatePersonName(v, 'last name'),
+                  ),
+                ),
+              ]),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _phone,
@@ -147,6 +146,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
         const SizedBox(height: 20),
         AuthError(_error),
         BusyButton(busy: _busy, onPressed: _submit, label: 'Create account'),
+        const SizedBox(height: 12),
+        Text(
+          'Want to offer rides? After you sign up, open the Driver tab to register as a driver.',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
       ],
     );
   }

@@ -146,7 +146,8 @@ void main() {
     Future<void> openAndFill(WidgetTester tester) async {
       await tester.tap(find.widgetWithText(OutlinedButton, 'Create an account'));
       await tester.pumpAndSettle();
-      await tester.enterText(_field('Full name'), 'Nimal Silva');
+      await tester.enterText(_field('First name'), 'Nimal');
+      await tester.enterText(_field('Last name'), 'Silva');
       await tester.enterText(_field('Mobile number'), '0771234567');
       await tester.enterText(_field('Password'), 'Abcd1234');
       await tester.enterText(_field('Confirm password'), 'Abcd1234');
@@ -157,18 +158,19 @@ void main() {
       final signedIn = await _pumpLogin(tester, api);
 
       await openAndFill(tester);
-      await tester.tap(find.text('Driver'));
-      await tester.pump();
+      // Everyone signs up as a passenger, so there is no role to choose.
+      expect(find.text('Driver'), findsNothing);
+      expect(find.text('Cargo'), findsNothing);
       await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
 
       // The optional email is left out, as the backend rejects an empty one.
       expect(api.calls['/auth/register'], {
-        'fullName': 'Nimal Silva',
+        'firstName': 'Nimal',
+        'lastName': 'Silva',
         'phone': '0771234567',
         'password': 'Abcd1234',
-        'role': 'DRIVER',
       });
       expect(find.text('Enter the code'), findsOneWidget);
       expect(find.textContaining('Send a new code in'), findsOneWidget);
@@ -193,6 +195,19 @@ void main() {
       await tester.pump();
 
       expect(find.text('The passwords do not match'), findsOneWidget);
+      expect(api.calls, isEmpty);
+    });
+
+    testWidgets('asks for both the first and the last name', (tester) async {
+      final api = _Api((_) => _ok());
+      await _pumpLogin(tester, api);
+
+      await openAndFill(tester);
+      await tester.enterText(_field('Last name'), '  ');
+      await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
+      await tester.pump();
+
+      expect(find.text('Enter your last name'), findsOneWidget);
       expect(api.calls, isEmpty);
     });
 
