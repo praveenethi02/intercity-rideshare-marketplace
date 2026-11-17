@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/formatters.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/app_components.dart';
 
 /// Shown instead of PENDING while documents are missing, because no admin can review it yet.
 const driverStatusDocumentsNeeded = 'DOCUMENTS_NEEDED';
@@ -10,30 +12,26 @@ class DriverStatusChip extends StatelessWidget {
   final String status;
   const DriverStatusChip(this.status, {super.key});
 
-  static (String, Color) _style(String status) => switch (status) {
-        driverStatusDocumentsNeeded => ('Documents needed', const Color(0xFF0B57D0)),
-        'PENDING' => ('In review', const Color(0xFF9A6700)),
-        'APPROVED' => ('Approved', const Color(0xFF0B6E4F)),
-        'REJECTED' => ('Rejected', const Color(0xFFB3261E)),
-        'ACTIVE' => ('Active', const Color(0xFF0B6E4F)),
-        'SUSPENDED' => ('Suspended', const Color(0xFFB3261E)),
-        'DEACTIVATED' => ('Deactivated', const Color(0xFF5F6368)),
-        'DRAFT' => ('Draft', const Color(0xFF5F6368)),
-        'SCHEDULED' => ('Scheduled', const Color(0xFF0B57D0)),
-        'IN_PROGRESS' => ('In progress', const Color(0xFF9A6700)),
-        'COMPLETED' => ('Completed', const Color(0xFF0B6E4F)),
-        'CANCELLED' => ('Cancelled', const Color(0xFFB3261E)),
-        _ => (status, const Color(0xFF5F6368)),
+  static (String, StatusTone) _style(String status) => switch (status) {
+        driverStatusDocumentsNeeded => ('Documents needed', StatusTone.info),
+        'PENDING' => ('In review', StatusTone.warning),
+        'APPROVED' => ('Approved', StatusTone.success),
+        'REJECTED' => ('Rejected', StatusTone.danger),
+        'ACTIVE' => ('Active', StatusTone.success),
+        'SUSPENDED' => ('Suspended', StatusTone.danger),
+        'DEACTIVATED' => ('Deactivated', StatusTone.neutral),
+        'DRAFT' => ('Draft', StatusTone.neutral),
+        'SCHEDULED' => ('Scheduled', StatusTone.info),
+        'IN_PROGRESS' => ('In progress', StatusTone.warning),
+        'COMPLETED' => ('Completed', StatusTone.success),
+        'CANCELLED' => ('Cancelled', StatusTone.danger),
+        _ => (status, StatusTone.neutral),
       };
 
   @override
   Widget build(BuildContext context) {
-    final (label, color) = _style(status);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
-      child: Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w600)),
-    );
+    final (label, tone) = _style(status);
+    return AppBadge(label, tone: tone);
   }
 }
 

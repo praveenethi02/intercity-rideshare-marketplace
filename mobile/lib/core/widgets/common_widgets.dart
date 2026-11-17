@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
+import 'app_components.dart';
+
+export 'app_components.dart';
+
 /// Full-screen error with a retry button.
 class ErrorView extends StatelessWidget {
   final Object error;
@@ -8,15 +14,22 @@ class ErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.error_outline, size: 48, color: Theme.of(context).colorScheme.error),
-          const SizedBox(height: 12),
-          Text('$error', textAlign: TextAlign.center),
+          const StateIcon(Icons.error_outline, tone: StatusTone.danger),
+          const SizedBox(height: AppSpacing.lg),
+          Text('Something went wrong', style: theme.textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            '$error',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
           if (onRetry != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.lg),
             OutlinedButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: const Text('Try again')),
           ],
         ]),
@@ -34,14 +47,19 @@ class EmptyView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 56, color: Theme.of(context).colorScheme.outline),
-          const SizedBox(height: 12),
-          Text(message, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyLarge),
-          if (action != null) ...[const SizedBox(height: 16), action!],
+          StateIcon(icon),
+          const SizedBox(height: AppSpacing.lg),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          if (action != null) ...[const SizedBox(height: AppSpacing.lg), action!],
         ]),
       ),
     );
@@ -58,9 +76,8 @@ class BusyButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final child = busy
-        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-        : Text(label);
+    final child =
+        busy ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : Text(label);
     if (icon != null && !busy) {
       return FilledButton.icon(onPressed: onPressed, icon: Icon(icon), label: child);
     }
@@ -124,7 +141,8 @@ class InfoRow extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(child: Text(label, style: theme.textTheme.bodyMedium)),
         Flexible(
-          child: Text(value, textAlign: TextAlign.end, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+          child: Text(value,
+              textAlign: TextAlign.end, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
         ),
       ]),
     );
@@ -140,7 +158,7 @@ class SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 8),
+      padding: const EdgeInsets.only(top: AppSpacing.xl, bottom: AppSpacing.sm),
       child: Row(children: [
         Expanded(child: Text(text, style: Theme.of(context).textTheme.titleMedium)),
         if (trailing != null) trailing!,
