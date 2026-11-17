@@ -1,5 +1,18 @@
 // Plain data classes for the vehicle feature (JSON is camelCase, same as the API).
 
+/// A make and its common models, for the add-vehicle dropdowns.
+class VehicleBrand {
+  final String name;
+  final List<String> models;
+
+  const VehicleBrand({required this.name, required this.models});
+
+  factory VehicleBrand.fromJson(Map<String, dynamic> j) => VehicleBrand(
+        name: j['name'] as String,
+        models: (j['models'] as List? ?? const []).cast<String>(),
+      );
+}
+
 class VehicleTypeConfig {
   final String type;
   final String label;
@@ -9,6 +22,9 @@ class VehicleTypeConfig {
   final int maxCargoVolumeL;
   final bool allowsCargo;
 
+  /// Suggestions only. The driver can pick "Other" and type any make or model.
+  final List<VehicleBrand> brands;
+
   const VehicleTypeConfig({
     required this.type,
     required this.label,
@@ -17,6 +33,7 @@ class VehicleTypeConfig {
     required this.maxCargoKg,
     required this.maxCargoVolumeL,
     required this.allowsCargo,
+    this.brands = const [],
   });
 
   factory VehicleTypeConfig.fromJson(Map<String, dynamic> j) => VehicleTypeConfig(
@@ -27,7 +44,17 @@ class VehicleTypeConfig {
         maxCargoKg: (j['maxCargoKg'] ?? 0) as int,
         maxCargoVolumeL: (j['maxCargoVolumeL'] ?? 0) as int,
         allowsCargo: (j['allowsCargo'] ?? false) as bool,
+        brands: [
+          for (final b in (j['brands'] as List? ?? const [])) VehicleBrand.fromJson(b as Map<String, dynamic>),
+        ],
       );
+
+  VehicleBrand? brandNamed(String name) {
+    for (final brand in brands) {
+      if (brand.name == name) return brand;
+    }
+    return null;
+  }
 }
 
 class Vehicle {

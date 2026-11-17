@@ -6,20 +6,47 @@ import 'session_store.dart';
 /// The signed-in user (from data.user of POST /auth/login).
 class AppUser {
   final String id;
+  final String firstName;
+  final String lastName;
   final String fullName;
   final String phone;
   final String role; // PASSENGER | DRIVER | CARGO_CUSTOMER | ADMIN
 
-  const AppUser({required this.id, required this.fullName, required this.phone, required this.role});
+  const AppUser({
+    required this.id,
+    this.firstName = '',
+    this.lastName = '',
+    required this.fullName,
+    required this.phone,
+    required this.role,
+  });
 
   factory AppUser.fromJson(Map<String, dynamic> j) => AppUser(
         id: j['id'] as String,
+        firstName: (j['firstName'] as String?) ?? '',
+        lastName: (j['lastName'] as String?) ?? '',
         fullName: (j['fullName'] as String?) ?? '',
         phone: (j['phone'] as String?) ?? '',
         role: j['role'] as String,
       );
 
+  /// The name to greet the user with. Older accounts may only have a full name.
+  String get greetingName {
+    if (firstName.isNotEmpty) return firstName;
+    final first = fullName.trim().split(RegExp(r'\s+')).first;
+    return first.isEmpty ? 'there' : first;
+  }
+
   bool get isDriver => role == 'DRIVER';
+
+  AppUser copyWith({String? role}) => AppUser(
+        id: id,
+        firstName: firstName,
+        lastName: lastName,
+        fullName: fullName,
+        phone: phone,
+        role: role ?? this.role,
+      );
 }
 
 /// Signs in with Member 1's auth API. The access token stays in memory and the refresh token is
@@ -87,20 +114,21 @@ class AuthService {
     }
   }
 
-  /// Creates an unverified account and texts a code to [phone]. Call [verifyOtp] next.
+  /// Creates an unverified passenger account and texts a code to [phone]. Call [verifyOtp] next.
+  /// A passenger becomes a driver later from the Driver tab.
   Future<void> register({
-    required String fullName,
+    required String firstName,
+    required String lastName,
     required String phone,
     String? email,
     required String password,
-    required String role,
   }) async {
     await _public.post('/auth/register', {
-      'fullName': fullName,
+      'firstName': firstName,
+      'lastName': lastName,
       'phone': phone,
       if (email != null) 'email': email,
       'password': password,
-      'role': role,
     });
   }
 

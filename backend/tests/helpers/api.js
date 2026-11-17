@@ -15,10 +15,10 @@ let nextPhone = 10000000;
 function newUserData(overrides = {}) {
   nextPhone += 1;
   return {
-    fullName: 'Test User',
+    firstName: 'Test',
+    lastName: 'User',
     phone: `07${nextPhone}`,
     password: PASSWORD,
-    role: 'PASSENGER',
     ...overrides,
   };
 }
@@ -47,15 +47,26 @@ function lastOtp(phone) {
   return call[1].match(/\b\d{6}\b/)[0];
 }
 
-/** Registers a user, verifies their phone and signs them in. Returns { data, user, tokens }. */
-async function signedInUser(overrides = {}) {
+/**
+ * Registers a user, verifies their phone and signs them in. Returns { data, user, tokens }.
+ * Everyone registers as a passenger, so another `role` is set afterwards with PUT /users/me/role.
+ */
+async function signedInUser({ role = 'PASSENGER', ...overrides } = {}) {
   const data = newUserData(overrides);
   const registered = await post('/auth/register', data);
   expect(registered.status).toBe(201);
 
   const verified = await post('/auth/otp/verify', { phone: data.phone, otp: lastOtp(data.phone) });
   expect(verified.status).toBe(200);
-  return { data, user: verified.body.data.user, tokens: verified.body.data.tokens };
+  const { tokens } = verified.body.data;
+  let { user } = verified.body.data;
+
+  if (role !== 'PASSENGER') {
+    const changed = await put('/users/me/role', tokens.accessToken, { role });
+    expect(changed.status).toBe(200);
+    user = changed.body.data.user;
+  }
+  return { data: { ...data, role }, user, tokens };
 }
 
 module.exports = {

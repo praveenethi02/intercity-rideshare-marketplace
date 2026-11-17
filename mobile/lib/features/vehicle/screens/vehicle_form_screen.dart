@@ -62,17 +62,31 @@ class _VehicleForm extends StatefulWidget {
   State<_VehicleForm> createState() => _VehicleFormState();
 }
 
+/// Dropdown value for "my brand or model is not in the list".
+const otherChoice = '__other__';
+
+/// "2-5 seats", or "2 seats" when a type allows only one number.
+String seatRange(int min, int max) => min == max ? '$min seats' : '$min-$max seats';
+
 class _VehicleFormState extends State<_VehicleForm> {
   final _formKey = GlobalKey<FormState>();
+  // _make and _model hold the typed name when the driver picks "Other".
   late final TextEditingController _make, _model, _year, _color, _plate, _cargoKg, _cargoL;
   late String _type;
   late int _totalSeats;
   late int _passengerSeats;
+  String? _brand; // A brand name from the list, otherChoice, or null before choosing.
+  String? _modelChoice; // A model name from the list, otherChoice, or null before choosing.
   bool _saving = false;
 
   Vehicle? get _existing => widget.existing;
   bool get _isEdit => _existing != null;
   VehicleTypeConfig get _cfg => widget.types.firstWhere((t) => t.type == _type, orElse: () => widget.types.first);
+
+  bool get _otherBrand => _brand == otherChoice;
+  bool get _otherModel => _otherBrand || _modelChoice == otherChoice;
+  String get _makeValue => _otherBrand ? _make.text.trim() : (_brand ?? '');
+  String get _modelValue => _otherModel ? _model.text.trim() : (_modelChoice ?? '');
 
   @override
   void initState() {
@@ -81,8 +95,9 @@ class _VehicleFormState extends State<_VehicleForm> {
     _type = v?.vehicleType ?? widget.types.first.type;
     _totalSeats = v?.totalSeats ?? _cfg.maxSeats;
     _passengerSeats = v?.passengerSeats ?? _totalSeats - 1;
-    _make = TextEditingController(text: v?.make ?? '');
-    _model = TextEditingController(text: v?.model ?? '');
+    _make = TextEditingController();
+    _model = TextEditingController();
+    if (v != null) _selectSaved(v.make, v.model);
     _year = TextEditingController(text: v?.year.toString() ?? '');
     _color = TextEditingController(text: v?.color ?? '');
     _plate = TextEditingController(text: v?.plateNumber ?? '');
@@ -98,11 +113,34 @@ class _VehicleFormState extends State<_VehicleForm> {
     super.dispose();
   }
 
+  /// Picks the saved make and model in the dropdowns, or "Other" with the name typed in.
+  void _selectSaved(String make, String model) {
+    final brand = _cfg.brandNamed(make);
+    if (brand == null) {
+      _brand = otherChoice;
+      _make.text = make;
+      _model.text = model;
+      return;
+    }
+    _brand = brand.name;
+    if (brand.models.contains(model)) {
+      _modelChoice = model;
+    } else {
+      _modelChoice = otherChoice;
+      _model.text = model;
+    }
+  }
+
   // Keep seats inside the new type's limits when the type changes.
   void _onTypeChanged(String? type) {
     if (type == null) return;
     setState(() {
       _type = type;
+      // A brand from the old type's list may not exist for the new type.
+      if (!_otherBrand && _brand != null && _cfg.brandNamed(_brand!) == null) {
+        _brand = null;
+        _modelChoice = null;
+      }
       _totalSeats = _totalSeats.clamp(_cfg.minSeats, _cfg.maxSeats);
       _passengerSeats = _passengerSeats.clamp(1, _totalSeats - 1);
       if (!_cfg.allowsCargo) {
@@ -114,8 +152,8 @@ class _VehicleFormState extends State<_VehicleForm> {
 
   Map<String, dynamic> _body() => {
         'vehicleType': _type,
-        'make': _make.text.trim(),
-        'model': _model.text.trim(),
+        'make': _makeValue,
+        'model': _modelValue,
         'year': int.parse(_year.text.trim()),
         'color': _color.text.trim(),
         'plateNumber': _plate.text.trim(),
@@ -220,6 +258,69 @@ class _VehicleFormState extends State<_VehicleForm> {
     return null;
   }
 
+  /// Brand dropdown, then model dropdown. "Other" swaps a dropdown for a text field.
+  List<Widget> _brandAndModelFields(VehicleTypeConfig cfg) {
+    final brand = _otherBrand || _brand == null ? null : cfg.brandNamed(_brand!);
+    final nameLimit = [LengthLimitingTextInputFormatter(50)];
+    const other = DropdownMenuItem(value: otherChoice, child: Text('Other (type the name)'));
+    return [
+      DropdownButtonFormField<String>(
+        // A new key resets the field when the type changes and the old brand is cleared.
+        key: ValueKey('brand-$_type'),
+        initialValue: _brand,
+        isExpanded: true,
+        decoration: const InputDecoration(labelText: 'Brand'),
+        hint: const Text('Choose a brand'),
+        items: [
+          for (final b in cfg.brands) DropdownMenuItem(value: b.name, child: Text(b.name)),
+          other,
+        ],
+        onChanged: (value) => setState(() {
+          _brand = value;
+          _modelChoice = null;
+        }),
+        validator: (value) => value == null ? 'Choose a brand' : null,
+      ),
+      if (_otherBrand) ...[
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _make,
+          textCapitalization: TextCapitalization.words,
+          inputFormatters: nameLimit,
+          decoration: const InputDecoration(labelText: 'Brand name', hintText: 'e.g. Mahindra'),
+          validator: _required,
+        ),
+      ],
+      const SizedBox(height: 12),
+      if (!_otherBrand)
+        DropdownButtonFormField<String>(
+          key: ValueKey('model-$_type-$_brand'),
+          initialValue: _modelChoice,
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: 'Model'),
+          hint: Text(brand == null ? 'Choose a brand first' : 'Choose a model'),
+          items: brand == null
+              ? const []
+              : [
+                  for (final m in brand.models) DropdownMenuItem(value: m, child: Text(m)),
+                  other,
+                ],
+          onChanged: brand == null ? null : (value) => setState(() => _modelChoice = value),
+          validator: (value) => value == null ? 'Choose a model' : null,
+        ),
+      if (_otherModel) ...[
+        if (!_otherBrand) const SizedBox(height: 12),
+        TextFormField(
+          controller: _model,
+          textCapitalization: TextCapitalization.words,
+          inputFormatters: nameLimit,
+          decoration: const InputDecoration(labelText: 'Model name', hintText: 'e.g. Alfa'),
+          validator: _required,
+        ),
+      ],
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final cfg = _cfg;
@@ -244,7 +345,7 @@ class _VehicleFormState extends State<_VehicleForm> {
               decoration: const InputDecoration(labelText: 'Vehicle type'),
               items: [
                 for (final t in widget.types)
-                  DropdownMenuItem(value: t.type, child: Text('${t.label} (${t.minSeats}-${t.maxSeats} seats)')),
+                  DropdownMenuItem(value: t.type, child: Text('${t.label} (${seatRange(t.minSeats, t.maxSeats)})')),
               ],
               onChanged: _onTypeChanged,
             ),
@@ -256,23 +357,7 @@ class _VehicleFormState extends State<_VehicleForm> {
               validator: _plateValidator,
             ),
             const SizedBox(height: 12),
-            Row(children: [
-              Expanded(
-                child: TextFormField(
-                  controller: _make,
-                  decoration: const InputDecoration(labelText: 'Make', hintText: 'Toyota'),
-                  validator: _required,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextFormField(
-                  controller: _model,
-                  decoration: const InputDecoration(labelText: 'Model', hintText: 'Axio'),
-                  validator: _required,
-                ),
-              ),
-            ]),
+            ..._brandAndModelFields(cfg),
             const SizedBox(height: 12),
             Row(children: [
               Expanded(
@@ -297,7 +382,7 @@ class _VehicleFormState extends State<_VehicleForm> {
             Text('Capacity', style: Theme.of(context).textTheme.titleMedium),
             SeatStepper(
               label: 'Total seats',
-              helper: 'Including the driver (${cfg.minSeats}-${cfg.maxSeats} for ${cfg.label})',
+              helper: 'Including the driver (${seatRange(cfg.minSeats, cfg.maxSeats)} for ${cfg.label})',
               value: _totalSeats,
               min: cfg.minSeats,
               max: cfg.maxSeats,

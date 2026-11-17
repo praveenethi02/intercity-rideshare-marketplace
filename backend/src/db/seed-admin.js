@@ -27,10 +27,13 @@ async function seedAdmin(env = process.env) {
   if (await userRepository.findByPhone(ADMIN_PHONE)) return false;
 
   const passwordHash = await hashPassword(ADMIN_PASSWORD);
+  // ADMIN_NAME is one value, so the first word becomes the first name.
+  const [firstName, ...rest] = ADMIN_NAME.split(/\s+/);
   await db.transaction(async (tx) => {
     const user = await userRepository.create(
       {
-        fullName: ADMIN_NAME,
+        firstName: firstName.slice(0, 50),
+        lastName: rest.join(' ').slice(0, 50),
         phone: ADMIN_PHONE,
         passwordHash,
         role: ROLES.ADMIN,

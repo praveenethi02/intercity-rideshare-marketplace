@@ -1,5 +1,5 @@
 const { z } = require('zod');
-const { fullName, email, selectableRole } = require('../auth/auth.schemas');
+const { personName, email, selectableRole } = require('../auth/auth.schemas');
 
 const httpsUrl = z
   .string()
@@ -11,7 +11,8 @@ const httpsUrl = z
 // Phone numbers and roles cannot be changed here, and strict objects reject unknown fields.
 const updateProfile = z
   .strictObject({
-    fullName: fullName.optional(),
+    firstName: personName.optional(),
+    lastName: personName.optional(),
     email: email.nullable().optional(),
     avatarUrl: httpsUrl.nullable().optional(),
   })

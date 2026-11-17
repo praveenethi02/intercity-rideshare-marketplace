@@ -42,5 +42,5 @@ export const DOC_LABELS = {
   PHOTO_INTERIOR: 'Photo – interior',
 };
 
-export const VEHICLE_TYPES = ['CAR', 'SUV', 'VAN', 'MINIBUS', 'BUS', 'PICKUP', 'LORRY'];
+export const VEHICLE_TYPES = ['CAR', 'THREE_WHEELER', 'MOTORBIKE', 'SUV', 'VAN', 'MINIBUS', 'BUS', 'PICKUP', 'LORRY'];
 export const STATUSES = ['PENDING', 'APPROVED', 'REJECTED', 'NOT_SUBMITTED'];

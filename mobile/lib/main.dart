@@ -9,6 +9,7 @@ import 'core/session_store.dart';
 import 'core/widgets/common_widgets.dart';
 import 'features/auth/auth.dart';
 import 'features/driver/driver.dart';
+import 'features/home/home_screen.dart';
 import 'features/trips/trips.dart';
 import 'features/vehicle/vehicle.dart';
 
@@ -131,7 +132,7 @@ class _RideshareAppState extends State<RideshareApp> {
     final auth = _auth;
     final user = auth?.user;
     if (auth == null || user == null) return;
-    setState(() => auth.user = AppUser(id: user.id, fullName: user.fullName, phone: user.phone, role: 'DRIVER'));
+    setState(() => auth.user = user.copyWith(role: 'DRIVER'));
     _checkDriverVehicle();
   }
 
@@ -141,7 +142,16 @@ class _RideshareAppState extends State<RideshareApp> {
     return MaterialApp(
       title: 'Intercity Rideshare',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(colorSchemeSeed: const Color(0xFF0B6E4F), useMaterial3: true),
+      // Brand blue from the Figma design system, the same as the sign-in screens.
+      // SCRUM-296 replaces this with the full shared theme.
+      // fidelity keeps the primary colour close to the seed instead of a muted tone.
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF1257D9),
+          dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
+        ),
+        useMaterial3: true,
+      ),
       // AppServices sits above the Navigator so every pushed screen can use it.
       builder: (context, child) => _trips == null
           ? child!
@@ -225,15 +235,27 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void didUpdateWidget(HomeShell oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Becoming a driver adds "My trips" at the start, so stay on the same tab.
-    if (widget.user.isDriver && !oldWidget.user.isDriver) _tab += 1;
+    // Becoming a driver adds "My trips" after Home, so stay on the same tab.
+    if (widget.user.isDriver && !oldWidget.user.isDriver && _tab >= 1) _tab += 1;
   }
+
+  void _go(int tab) => setState(() => _tab = tab);
 
   @override
   Widget build(BuildContext context) {
     final isDriver = widget.user.isDriver;
     final showDriverTab = widget.user.role != 'ADMIN';
+    // Tab order: Home, My trips (drivers only), Find a ride, Driver, then Sign out.
+    final myTripsTab = isDriver ? 1 : null;
+    final searchTab = isDriver ? 2 : 1;
+    final driverTab = searchTab + 1;
     final pages = <Widget>[
+      HomeScreen(
+        user: widget.user,
+        onFindRide: () => _go(searchTab),
+        onOpenDriver: () => _go(showDriverTab ? driverTab : searchTab),
+        onOpenMyTrips: myTripsTab == null ? null : () => _go(myTripsTab),
+      ),
       if (isDriver) const DriverTripsScreen(),
       const SearchTripsScreen(),
       if (showDriverTab) DriverHomeScreen(repository: widget.drivers, onBecameDriver: widget.onBecameDriver),
@@ -244,13 +266,14 @@ class _HomeShellState extends State<HomeShell> {
         selectedIndex: _tab,
         onDestinationSelected: (i) async {
           if (i < pages.length) {
-            setState(() => _tab = i);
+            _go(i);
             return;
           }
           final ok = await confirmSignOut(context, widget.user.fullName);
           if (ok) await widget.onSignOut();
         },
         destinations: [
+          const NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Home'),
           if (isDriver) const NavigationDestination(icon: Icon(Icons.directions_car), label: 'My trips'),
           const NavigationDestination(icon: Icon(Icons.search), label: 'Find a ride'),
           if (showDriverTab) const NavigationDestination(icon: Icon(Icons.badge_outlined), label: 'Driver'),

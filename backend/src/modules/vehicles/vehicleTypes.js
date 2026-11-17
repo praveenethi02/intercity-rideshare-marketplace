@@ -6,8 +6,15 @@
 // maxCargoKg           -> cargoCapacityKg upper limit (0 would mean "no cargo allowed")
 // maxCargoVolumeL      -> cargoVolumeL upper limit
 
+const { brandsFor } = require('./vehicleCatalog');
+
+// The order here is the order of the app's dropdown.
 const VEHICLE_TYPES = Object.freeze({
   CAR: { label: 'Car', minSeats: 2, maxSeats: 5, maxCargoKg: 100, maxCargoVolumeL: 500 },
+  // Driver plus up to 3 passengers.
+  THREE_WHEELER: { label: 'Three-wheeler', minSeats: 2, maxSeats: 4, maxCargoKg: 150, maxCargoVolumeL: 300 },
+  // Driver plus one pillion passenger, and a small bag at most.
+  MOTORBIKE: { label: 'Motorbike', minSeats: 2, maxSeats: 2, maxCargoKg: 20, maxCargoVolumeL: 50 },
   SUV: { label: 'SUV', minSeats: 5, maxSeats: 8, maxCargoKg: 200, maxCargoVolumeL: 800 },
   VAN: { label: 'Van', minSeats: 5, maxSeats: 15, maxCargoKg: 800, maxCargoVolumeL: 3000 },
   MINIBUS: { label: 'Mini bus', minSeats: 10, maxSeats: 30, maxCargoKg: 500, maxCargoVolumeL: 2000 },
@@ -18,12 +25,13 @@ const VEHICLE_TYPES = Object.freeze({
 
 const VEHICLE_TYPE_KEYS = Object.keys(VEHICLE_TYPES);
 
-// Shape returned by GET /api/v1/vehicles/types
+// Shape returned by GET /api/v1/vehicles/types. brands feeds the make and model dropdowns.
 function listVehicleTypes() {
   return VEHICLE_TYPE_KEYS.map((type) => ({
     type,
     ...VEHICLE_TYPES[type],
     allowsCargo: VEHICLE_TYPES[type].maxCargoKg > 0,
+    brands: brandsFor(type),
   }));
 }
 

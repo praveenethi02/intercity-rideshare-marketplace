@@ -4,7 +4,7 @@ const env = require('../../config/env');
 const ApiError = require('../../utils/ApiError');
 const { hashPassword, verifyPassword } = require('../../utils/password');
 const userRepository = require('../users/user.repository');
-const { USER_STATUS } = require('../users/user.constants');
+const { ROLES, USER_STATUS } = require('../users/user.constants');
 const sessionRepository = require('./session.repository');
 const tokens = require('./token.service');
 const otpService = require('./otp.service');
@@ -50,8 +50,10 @@ async function startSession(user, client) {
 /**
  * Creates an unverified account and texts a code to the phone. An account nobody has verified
  * can be registered again, so a stranger who enters your number cannot lock you out of it.
+ * Every new account is a passenger. Drivers register from inside the app (POST /drivers).
  */
-async function register({ fullName, phone, email, password, role }) {
+async function register({ firstName, lastName, phone, email, password }) {
+  const role = ROLES.PASSENGER;
   const existing = await userRepository.findByPhone(phone);
   if (existing && existing.status !== USER_STATUS.PENDING_VERIFICATION) {
     throw new ApiError(409, 'PHONE_ALREADY_REGISTERED', 'This phone number is already registered');
@@ -62,7 +64,8 @@ async function register({ fullName, phone, email, password, role }) {
   if (existing) {
     await otpService.issue(phone, OTP_PURPOSE.REGISTER);
     return userRepository.updatePendingRegistration(existing.id, {
-      fullName,
+      firstName,
+      lastName,
       email,
       passwordHash,
       role,
@@ -70,7 +73,8 @@ async function register({ fullName, phone, email, password, role }) {
   }
 
   const user = await userRepository.create({
-    fullName,
+    firstName,
+    lastName,
     phone,
     email,
     passwordHash,

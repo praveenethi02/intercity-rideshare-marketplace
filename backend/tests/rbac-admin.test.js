@@ -137,9 +137,9 @@ describe('admin user management', () => {
 
   test('lists users without password hashes, with filters and paging', async () => {
     const { token } = await signedInAdmin();
-    await signedInUser({ role: 'DRIVER', fullName: 'Nimal Driver' });
-    await signedInUser({ role: 'DRIVER', fullName: 'Sunil Driver' });
-    await signedInUser({ role: 'PASSENGER', fullName: '100% Passenger' });
+    await signedInUser({ role: 'DRIVER', firstName: 'Nimal', lastName: 'Driver' });
+    await signedInUser({ role: 'DRIVER', firstName: 'Sunil', lastName: 'Driver' });
+    await signedInUser({ role: 'PASSENGER', firstName: '100%', lastName: 'Passenger' });
 
     const all = await get('/admin/users', token);
     expect(all.status).toBe(200);
