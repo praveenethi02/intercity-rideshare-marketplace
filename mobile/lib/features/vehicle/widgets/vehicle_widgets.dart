@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/app_components.dart';
+
 /// Coloured chip for NOT_SUBMITTED / PENDING / APPROVED / REJECTED (and document statuses).
 class StatusBadge extends StatelessWidget {
   const StatusBadge(this.status, {super.key});
@@ -15,37 +18,15 @@ class StatusBadge extends StatelessWidget {
     'MISSING': 'Not uploaded',
   };
 
-  Color _color() {
-    switch (status) {
-      case 'APPROVED':
-      case 'ACCEPTED':
-        return Colors.green.shade700;
-      case 'PENDING':
-      case 'UPLOADED':
-        return Colors.orange.shade800;
-      case 'REJECTED':
-        return Colors.red.shade700;
-      default:
-        return Colors.blueGrey.shade600;
-    }
-  }
+  StatusTone get _tone => switch (status) {
+        'APPROVED' || 'ACCEPTED' => StatusTone.success,
+        'PENDING' || 'UPLOADED' => StatusTone.warning,
+        'REJECTED' => StatusTone.danger,
+        _ => StatusTone.neutral,
+      };
 
   @override
-  Widget build(BuildContext context) {
-    final color = _color();
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.5)),
-      ),
-      child: Text(
-        _labels[status] ?? status,
-        style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 12),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => AppBadge(_labels[status] ?? status, tone: _tone);
 }
 
 /// "-  4  +" stepper that never goes outside [min]..[max].

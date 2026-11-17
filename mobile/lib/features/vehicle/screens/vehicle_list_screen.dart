@@ -134,7 +134,8 @@ class _VehicleCardState extends State<_VehicleCard> {
             ),
             if (v.verificationStatus == 'REJECTED' && v.rejectionReason != null) ...[
               const SizedBox(height: 6),
-              Text('Rejected: ${v.rejectionReason}', style: TextStyle(color: Colors.red.shade700)),
+              Text('Rejected: ${v.rejectionReason}',
+                  style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer)),
             ],
             const Divider(height: 20),
             Row(

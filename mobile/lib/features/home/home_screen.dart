@@ -160,7 +160,7 @@ class _Header extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [colors.primary, Color.lerp(colors.primary, Colors.black, 0.35)!],
+          colors: [colors.primary, colors.onPrimaryContainer],
         ),
         borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
       ),

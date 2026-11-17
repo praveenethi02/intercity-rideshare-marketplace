@@ -82,9 +82,9 @@ class _VehicleVerificationScreenState extends State<VehicleVerificationScreen> {
                 if (v.status == 'REJECTED' && v.rejectionReason != null) ...[
                   const SizedBox(height: 12),
                   Card(
-                    color: Colors.red.shade50,
+                    color: Theme.of(context).colorScheme.errorContainer,
                     child: ListTile(
-                      leading: Icon(Icons.info_outline, color: Colors.red.shade700),
+                      leading: Icon(Icons.info_outline, color: Theme.of(context).colorScheme.onErrorContainer),
                       title: const Text('Reason from admin'),
                       subtitle: Text(v.rejectionReason!),
                     ),
@@ -96,7 +96,7 @@ class _VehicleVerificationScreenState extends State<VehicleVerificationScreen> {
                   for (final t in v.missingDocuments)
                     ListTile(
                       dense: true,
-                      leading: const Icon(Icons.close, color: Colors.red),
+                      leading: Icon(Icons.close, color: Theme.of(context).colorScheme.error),
                       title: Text(vehicleDocTypes[t] ?? t),
                     ),
                   OutlinedButton.icon(

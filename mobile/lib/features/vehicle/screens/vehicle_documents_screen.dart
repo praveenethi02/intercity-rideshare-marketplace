@@ -175,9 +175,13 @@ class _DocCardState extends State<_DocCard> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: doc == null
-                    ? Container(color: Colors.black12, child: const Icon(Icons.upload_file))
+                    ? Container(
+                        color: Theme.of(context).colorScheme.surfaceContainerHigh, child: const Icon(Icons.upload_file))
                     : doc.isPdf
-                        ? Container(color: Colors.black12, child: const Icon(Icons.picture_as_pdf, size: 32))
+                        ? Container(
+                            color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                            child: const Icon(Icons.picture_as_pdf, size: 32),
+                          )
                         : Image.network(
                             doc.fileUrl,
                             fit: BoxFit.cover,

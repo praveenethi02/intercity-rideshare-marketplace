@@ -4,10 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../../../core/api_client.dart';
-
-// Colours from the Figma design system.
-const _brand900 = Color(0xFF0B203F);
-const _brand500 = Color(0xFF1257D9);
+import '../../../core/theme/app_spacing.dart';
 
 /// Seconds the backend makes a user wait between codes.
 const otpCooldownSeconds = 60;
@@ -49,35 +46,25 @@ class AuthPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final base = Theme.of(context);
-    return Theme(
-      data: base.copyWith(
-        colorScheme: ColorScheme.fromSeed(seedColor: _brand500).copyWith(primary: _brand500),
-        inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-      ),
-      child: Scaffold(
-        backgroundColor: Colors.white,
-        appBar: Navigator.canPop(context) ? AppBar(backgroundColor: Colors.white, elevation: 0) : null,
-        body: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 440),
-              child: ListView(
-                shrinkWrap: true,
-                padding: const EdgeInsets.all(24),
-                children: [
-                  Text(
-                    title,
-                    style: base.textTheme.headlineSmall?.copyWith(color: _brand900, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(subtitle, style: base.textTheme.bodyMedium),
-                  const SizedBox(height: 24),
-                  ...children,
-                ],
-              ),
+    final theme = Theme.of(context);
+    final surface = theme.colorScheme.surface;
+    return Scaffold(
+      backgroundColor: surface,
+      appBar: Navigator.canPop(context) ? AppBar(backgroundColor: surface) : null,
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.all(AppSpacing.xl),
+              children: [
+                Text(title, style: theme.textTheme.headlineSmall),
+                const SizedBox(height: AppSpacing.xs),
+                Text(subtitle, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                const SizedBox(height: AppSpacing.xl),
+                ...children,
+              ],
             ),
           ),
         ),
