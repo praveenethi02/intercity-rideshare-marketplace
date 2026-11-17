@@ -6,6 +6,7 @@ import 'core/app_services.dart';
 import 'core/auth_service.dart';
 import 'core/formatters.dart';
 import 'core/session_store.dart';
+import 'core/theme/app_theme.dart';
 import 'core/widgets/common_widgets.dart';
 import 'features/auth/auth.dart';
 import 'features/driver/driver.dart';
@@ -142,16 +143,8 @@ class _RideshareAppState extends State<RideshareApp> {
     return MaterialApp(
       title: 'Intercity Rideshare',
       debugShowCheckedModeBanner: false,
-      // Brand blue from the Figma design system, the same as the sign-in screens.
-      // SCRUM-296 replaces this with the full shared theme.
-      // fidelity keeps the primary colour close to the seed instead of a muted tone.
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1257D9),
-          dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
-        ),
-        useMaterial3: true,
-      ),
+      // The shared theme from the Figma design system (SCRUM-296).
+      theme: AppTheme.light,
       // AppServices sits above the Navigator so every pushed screen can use it.
       builder: (context, child) => _trips == null
           ? child!
