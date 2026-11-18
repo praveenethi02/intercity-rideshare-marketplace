@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart' show StringCharacters;
 import 'package:http/http.dart' as http;
 
 import 'api_client.dart';
@@ -10,6 +11,7 @@ class AppUser {
   final String lastName;
   final String fullName;
   final String phone;
+  final String? email;
   final String role; // PASSENGER | DRIVER | CARGO_CUSTOMER | ADMIN
 
   const AppUser({
@@ -18,6 +20,7 @@ class AppUser {
     this.lastName = '',
     required this.fullName,
     required this.phone,
+    this.email,
     required this.role,
   });
 
@@ -27,8 +30,25 @@ class AppUser {
         lastName: (j['lastName'] as String?) ?? '',
         fullName: (j['fullName'] as String?) ?? '',
         phone: (j['phone'] as String?) ?? '',
+        email: j['email'] as String?,
         role: j['role'] as String,
       );
+
+  /// One or two letters for the avatar, such as "NP" for Nimal Perera.
+  String get initials {
+    final words = [firstName, lastName].where((w) => w.trim().isNotEmpty).toList();
+    final parts = words.isEmpty ? fullName.trim().split(RegExp(r'\s+')) : words;
+    final letters = parts.where((p) => p.isNotEmpty).take(2).map((p) => p.characters.first.toUpperCase()).join();
+    return letters.isEmpty ? '?' : letters;
+  }
+
+  /// The role as people say it.
+  String get roleLabel => switch (role) {
+        'DRIVER' => 'Driver',
+        'ADMIN' => 'Admin',
+        'CARGO_CUSTOMER' => 'Cargo customer',
+        _ => 'Passenger',
+      };
 
   /// The name to greet the user with. Older accounts may only have a full name.
   String get greetingName {
@@ -45,6 +65,7 @@ class AppUser {
         lastName: lastName,
         fullName: fullName,
         phone: phone,
+        email: email,
         role: role ?? this.role,
       );
 }
@@ -130,6 +151,17 @@ class AuthService {
       if (email != null) 'email': email,
       'password': password,
     });
+  }
+
+  /// Saves the signed-in user's name and email (PATCH /users/me) and returns the updated user.
+  /// An empty [email] removes it.
+  Future<AppUser> updateProfile({required String firstName, required String lastName, required String email}) async {
+    final r = await api.patch('/users/me', {
+      'firstName': firstName,
+      'lastName': lastName,
+      'email': email.isEmpty ? null : email,
+    });
+    return user = AppUser.fromJson((r.data as Map<String, dynamic>)['user'] as Map<String, dynamic>);
   }
 
   /// Confirms the registration code, which activates the account and signs the user in.

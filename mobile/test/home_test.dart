@@ -38,6 +38,7 @@ Future<List<String>> _pump(
       onFindRide: () => opened.add('search'),
       onOpenDriver: () => opened.add('driver'),
       onOpenMyTrips: driver ? () => opened.add('my trips') : null,
+      onOpenAccount: () => opened.add('account'),
     ),
   ));
   return opened;
@@ -66,6 +67,12 @@ void main() {
   testWidgets('greets the user by first name', (tester) async {
     await _pump(tester, _passenger);
     expect(find.text('Good morning, Nimal'), findsOneWidget);
+  });
+
+  testWidgets('the avatar shows the initials and opens Account', (tester) async {
+    final opened = await _pump(tester, _passenger);
+    await tester.tap(find.text('NS'));
+    expect(opened, ['account']);
   });
 
   testWidgets('the search card opens Find a ride', (tester) async {
