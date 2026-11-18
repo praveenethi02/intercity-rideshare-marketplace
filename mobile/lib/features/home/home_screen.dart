@@ -34,6 +34,9 @@ class HomeScreen extends StatelessWidget {
   /// Opens My trips. Null when the user is not a driver.
   final VoidCallback? onOpenMyTrips;
 
+  /// Opens the Account tab when the avatar is tapped.
+  final VoidCallback? onOpenAccount;
+
   /// Lets tests fix the time for the greeting.
   final DateTime Function() clock;
 
@@ -43,6 +46,7 @@ class HomeScreen extends StatelessWidget {
     required this.onFindRide,
     required this.onOpenDriver,
     this.onOpenMyTrips,
+    this.onOpenAccount,
     this.clock = DateTime.now,
   });
 
@@ -66,7 +70,12 @@ class HomeScreen extends StatelessWidget {
       body: ListView(
         padding: EdgeInsets.zero,
         children: [
-          _Header(user: user, greeting: greetingFor(clock()), onFindRide: onFindRide),
+          _Header(
+            user: user,
+            greeting: greetingFor(clock()),
+            onFindRide: onFindRide,
+            onOpenAccount: onOpenAccount,
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
             // Same height for all three, even when a label wraps to two lines.
@@ -147,7 +156,8 @@ class _Header extends StatelessWidget {
   final AppUser user;
   final String greeting;
   final VoidCallback onFindRide;
-  const _Header({required this.user, required this.greeting, required this.onFindRide});
+  final VoidCallback? onOpenAccount;
+  const _Header({required this.user, required this.greeting, required this.onFindRide, this.onOpenAccount});
 
   @override
   Widget build(BuildContext context) {
@@ -183,12 +193,19 @@ class _Header extends StatelessWidget {
                   ),
                 ]),
               ),
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: onPrimary.withValues(alpha: 0.2),
-                child: Text(
-                  user.greetingName.characters.first.toUpperCase(),
-                  style: theme.textTheme.titleMedium?.copyWith(color: onPrimary, fontWeight: FontWeight.w700),
+              Tooltip(
+                message: 'Account',
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: onOpenAccount,
+                  child: CircleAvatar(
+                    radius: 22,
+                    backgroundColor: onPrimary.withValues(alpha: 0.2),
+                    child: Text(
+                      user.initials,
+                      style: theme.textTheme.titleMedium?.copyWith(color: onPrimary, fontWeight: FontWeight.w700),
+                    ),
+                  ),
                 ),
               ),
             ]),

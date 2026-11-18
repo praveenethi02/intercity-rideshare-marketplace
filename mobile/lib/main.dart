@@ -9,6 +9,9 @@ import 'core/session_store.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/common_widgets.dart';
 import 'features/auth/auth.dart';
+import 'features/account/account_screen.dart';
+import 'features/account/edit_profile_screen.dart' show SaveProfile;
+import 'features/account/splash_screen.dart';
 import 'features/driver/driver.dart';
 import 'features/home/home_screen.dart';
 import 'features/trips/trips.dart';
@@ -128,6 +131,14 @@ class _RideshareAppState extends State<RideshareApp> {
     return vehicle == null ? noUsableVehicleMessage(vehicles) : null;
   }
 
+  /// Saves the profile, then rebuilds so Home and Account show the new name at once.
+  Future<void> _saveProfile({required String firstName, required String lastName, required String email}) async {
+    final auth = _auth;
+    if (auth == null) return;
+    await auth.updateProfile(firstName: firstName, lastName: lastName, email: email);
+    if (mounted) setState(() {});
+  }
+
   /// Registering makes this user a driver on the server, so the app shows the driver tabs too.
   void _becameDriver() {
     final auth = _auth;
@@ -165,11 +176,15 @@ class _RideshareAppState extends State<RideshareApp> {
 
   Widget _home(AppUser? user) {
     if (user != null) {
-      return HomeShell(user: user, drivers: _drivers!, onSignOut: _signOut, onBecameDriver: _becameDriver);
+      return HomeShell(
+        user: user,
+        drivers: _drivers!,
+        onSignOut: _signOut,
+        onBecameDriver: _becameDriver,
+        onSaveProfile: _saveProfile,
+      );
     }
-    if (_restoring) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
+    if (_restoring) return const SplashScreen();
     final error = _restoreError;
     if (error != null) {
       return Scaffold(
@@ -211,12 +226,14 @@ class HomeShell extends StatefulWidget {
   final DriverRepository drivers;
   final Future<void> Function() onSignOut;
   final VoidCallback onBecameDriver;
+  final SaveProfile onSaveProfile;
   const HomeShell({
     super.key,
     required this.user,
     required this.drivers,
     required this.onSignOut,
     required this.onBecameDriver,
+    required this.onSaveProfile,
   });
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -238,56 +255,46 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final isDriver = widget.user.isDriver;
     final showDriverTab = widget.user.role != 'ADMIN';
-    // Tab order: Home, My trips (drivers only), Find a ride, Driver, then Sign out.
+    // Tab order: Home, My trips (drivers only), Find a ride, Driver (not for admins), Account.
     final myTripsTab = isDriver ? 1 : null;
     final searchTab = isDriver ? 2 : 1;
-    final driverTab = searchTab + 1;
+    final driverTab = showDriverTab ? searchTab + 1 : null;
+    final accountTab = (driverTab ?? searchTab) + 1;
     final pages = <Widget>[
       HomeScreen(
         user: widget.user,
         onFindRide: () => _go(searchTab),
-        onOpenDriver: () => _go(showDriverTab ? driverTab : searchTab),
+        onOpenDriver: () => _go(driverTab ?? searchTab),
         onOpenMyTrips: myTripsTab == null ? null : () => _go(myTripsTab),
+        onOpenAccount: () => _go(accountTab),
       ),
       if (isDriver) const DriverTripsScreen(),
       const SearchTripsScreen(),
       if (showDriverTab) DriverHomeScreen(repository: widget.drivers, onBecameDriver: widget.onBecameDriver),
+      AccountScreen(
+        user: widget.user,
+        onSaveProfile: widget.onSaveProfile,
+        onSignOut: widget.onSignOut,
+        onOpenDriver: driverTab == null ? null : () => _go(driverTab),
+      ),
     ];
     return Scaffold(
       body: IndexedStack(index: _tab, children: pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
-        onDestinationSelected: (i) async {
-          if (i < pages.length) {
-            _go(i);
-            return;
-          }
-          final ok = await confirmSignOut(context, widget.user.fullName);
-          if (ok) await widget.onSignOut();
-        },
+        onDestinationSelected: _go,
         destinations: [
           const NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Home'),
           if (isDriver) const NavigationDestination(icon: Icon(Icons.directions_car), label: 'My trips'),
           const NavigationDestination(icon: Icon(Icons.search), label: 'Find a ride'),
           if (showDriverTab) const NavigationDestination(icon: Icon(Icons.badge_outlined), label: 'Driver'),
-          const NavigationDestination(icon: Icon(Icons.logout), label: 'Sign out'),
+          const NavigationDestination(
+            icon: Icon(Icons.account_circle_outlined),
+            selectedIcon: Icon(Icons.account_circle),
+            label: 'Account',
+          ),
         ],
       ),
     );
   }
-}
-
-Future<bool> confirmSignOut(BuildContext context, String name) async {
-  final result = await showDialog<bool>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('Sign out?'),
-      content: Text('You are signed in as $name.'),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')),
-        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Sign out')),
-      ],
-    ),
-  );
-  return result ?? false;
 }
