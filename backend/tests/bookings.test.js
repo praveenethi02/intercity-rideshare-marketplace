@@ -1,6 +1,7 @@
 const db = require('../src/db');
 const seedAdmin = require('../src/db/seed-admin');
-const { post, get, signedInUser } = require('./helpers/api');
+const bookingRepository = require('../src/modules/bookings/booking.repository');
+const { post, get, patch, signedInUser } = require('./helpers/api');
 const { startTestDb, resetTestDb, stopTestDb } = require('./helpers/test-db');
 
 beforeAll(startTestDb);
@@ -157,6 +158,30 @@ describe('POST /bookings', () => {
 
     const res = await get(`/bookings/${booking.id}`, passenger.token);
     expect(res.body.data.booking).toMatchObject({ pricePerSeatCents: 250000, totalCents: 500000 });
+  });
+
+  test('stops with PRICE_CHANGED if the driver changes the price while the booking is made', async () => {
+    const driver = await signedInDriver();
+    const trip = await tripOf(driver);
+    const passenger = await signedInPassenger();
+    // The first read (before the transaction) sees the old price; then the driver edits it.
+    const findTrip = bookingRepository.findTrip;
+    const spy = jest.spyOn(bookingRepository, 'findTrip').mockImplementationOnce(async (...args) => {
+      const row = await findTrip(...args);
+      const edited = await patch(`/trips/${trip.id}`, driver.token, { basePriceCents: 300000 });
+      expect(edited.status).toBe(200);
+      return row;
+    });
+
+    try {
+      expectError(await book(passenger.token, { tripId: trip.id }), 409, 'PRICE_CHANGED');
+    } finally {
+      spy.mockRestore();
+    }
+
+    // The seats were rolled back, and a new try books at the new price.
+    expect((await availability(passenger.token, trip.id, 0, 3)).seatsAvailable).toBe(3);
+    expect(await booked(passenger.token, { tripId: trip.id })).toMatchObject({ pricePerSeatCents: 300000 });
   });
 
   test('cannot oversell the last seat', async () => {
