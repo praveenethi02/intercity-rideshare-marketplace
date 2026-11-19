@@ -1,6 +1,7 @@
 # Seat Booking API changes (Member 5, SCRUM-78)
 
-For the PM to merge into `docs/api/openapi.yaml`. All paths start with `/api/v1` and need a
+For the PM to merge into `docs/api/openapi.yaml`. The full spec for these endpoints is in
+[`docs/api/bookings.openapi.yaml`](../bookings.openapi.yaml). All paths start with `/api/v1` and need a
 Bearer token. Responses use the standard `{ success, message, data, meta }` format, and errors put
 their code in `meta.code` (validation errors also list `meta.details[]`). Money is LKR cents.
 
