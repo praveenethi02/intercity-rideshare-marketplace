@@ -1,0 +1,220 @@
+openapi: 3.0.3
+info:
+  title: Intercity Rideshare - Seat Booking (Member 5)
+  version: 0.1.0
+  description: |
+    Fixed-price seat booking endpoints (Member 5, SCRUM-78). Merge `paths` and `components.schemas`
+    into docs/api/openapi.yaml. Responses use { success, message, data, meta } and wrap the result in
+    a named key, data.booking or data.bookings. Errors put their code in meta.code. Validation errors
+    are 422 VALIDATION_ERROR. Money is LKR cents (integer). See docs/api/changes/bookings.md.
+servers:
+  - url: http://localhost:4000/api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: Bookings
+
+paths:
+  /bookings:
+    post:
+      tags: [Bookings]
+      operationId: createBooking
+      summary: Book seats on a FIXED-price trip, for the whole route or part of it
+      description: |
+        Any signed-in user except the trip's driver. The seat price comes from the trip, never from
+        the client. The seats and the booking are saved in one transaction. One CONFIRMED booking per
+        passenger per trip.
+        Errors: 404 TRIP_NOT_FOUND (missing or DRAFT), 409 AUCTION_TRIP, 403 OWN_TRIP,
+        409 TRIP_NOT_BOOKABLE (not SCHEDULED), 409 TRIP_DEPARTED, 409 ALREADY_BOOKED,
+        422 INVALID_SEGMENT, 409 NOT_ENOUGH_SEATS (meta.details.seatsAvailable), 409 PRICE_CHANGED.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateBookingRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/BookingResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+
+  /bookings/mine:
+    get:
+      tags: [Bookings]
+      operationId: listMyBookings
+      summary: The signed-in user's bookings as a passenger, newest first
+      parameters:
+        - name: when
+          in: query
+          description: |
+            upcoming = CONFIRMED bookings on SCHEDULED or IN_PROGRESS trips.
+            past = everything else (completed or cancelled trips, cancelled bookings). Leave out for all.
+          schema: { type: string, enum: [upcoming, past] }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Bookings, with paging in meta
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          bookings: { type: array, items: { $ref: '#/components/schemas/Booking' } }
+                      meta: { $ref: '#/components/schemas/PageMeta' }
+        '401': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+
+  /bookings/{id}:
+    get:
+      tags: [Bookings]
+      operationId: getBooking
+      summary: One booking
+      description: Only its passenger, the trip's driver or an admin. Others get 404 BOOKING_NOT_FOUND.
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200': { $ref: '#/components/responses/BookingResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+
+  /bookings/{id}/cancel:
+    post:
+      tags: [Bookings]
+      operationId: cancelBooking
+      summary: Cancel a booking and give the seats back
+      description: |
+        Only the passenger (others get 404 BOOKING_NOT_FOUND), and only while the trip is SCHEDULED.
+        Errors: 409 ALREADY_CANCELLED, 409 TRIP_NOT_CANCELLABLE.
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelBookingRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/BookingResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  parameters:
+    BookingId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    Page: { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+
+  responses:
+    BookingResponse:
+      description: Booking
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data: { type: object, properties: { booking: { $ref: '#/components/schemas/Booking' } } }
+    Error:
+      description: Error (success = false)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  schemas:
+    Envelope:
+      type: object
+      required: [success, message, data]
+      properties:
+        success: { type: boolean, example: true }
+        message: { type: string, example: OK }
+        data: {}
+        meta: { type: object, nullable: true }
+
+    ErrorEnvelope:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        message: { type: string, example: Not enough seats on this part of the route }
+        data: { nullable: true, example: null }
+        meta:
+          type: object
+          properties:
+            code: { type: string, example: NOT_ENOUGH_SEATS }
+            details: { description: 'Validation: [{ field, message }]. NOT_ENOUGH_SEATS: { seatsAvailable }' }
+
+    PageMeta:
+      type: object
+      properties:
+        page: { type: integer }
+        limit: { type: integer }
+        total: { type: integer }
+        totalPages: { type: integer }
+
+    BookingStatus: { type: string, enum: [CONFIRMED, CANCELLED] }
+
+    CreateBookingRequest:
+      type: object
+      additionalProperties: false
+      required: [tripId, fromStop, toStop, seats]
+      properties:
+        tripId: { type: string, format: uuid }
+        fromStop: { type: integer, minimum: 0, description: Pickup stop order (0 = first stop) }
+        toStop: { type: integer, minimum: 1, description: Drop stop order, after fromStop }
+        seats: { type: integer, minimum: 1, maximum: 14 }
+
+    CancelBookingRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 300 }
+
+    BookingStop:
+      type: object
+      properties:
+        stopOrder: { type: integer }
+        name: { type: string, example: Kadawatha }
+        plannedAt: { type: string, format: date-time, nullable: true }
+
+    Booking:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        reference: { type: string, pattern: '^BK-[A-HJ-NP-Z2-9]{6}$', example: BK-7Q2K9M }
+        status: { $ref: '#/components/schemas/BookingStatus' }
+        tripId: { type: string, format: uuid }
+        passengerId: { type: string, format: uuid }
+        fromStop: { type: integer }
+        toStop: { type: integer }
+        seats: { type: integer }
+        pricePerSeatCents: { type: integer, description: Segment seat price saved at booking time }
+        totalCents: { type: integer, description: seats x pricePerSeatCents }
+        cancelReason: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        cancelledAt: { type: string, format: date-time, nullable: true }
+        pickup: { $ref: '#/components/schemas/BookingStop' }
+        drop: { $ref: '#/components/schemas/BookingStop' }
+        trip:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            driverId: { type: string, format: uuid }
+            pricingMode: { type: string, enum: [FIXED, AUCTION] }
+            status: { type: string, enum: [SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED] }
+            originName: { type: string, example: Colombo Fort }
+            destinationName: { type: string, example: Kandy }
+            departureAt: { type: string, format: date-time }
+            estimatedArrivalAt: { type: string, format: date-time, nullable: true }
