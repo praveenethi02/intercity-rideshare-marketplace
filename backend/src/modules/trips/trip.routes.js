@@ -2,7 +2,7 @@ const { Router } = require('express');
 const authenticate = require('../../middleware/authenticate');
 const requireRole = require('../../middleware/require-role');
 const validate = require('../../middleware/validate');
-const { authRateLimit } = require('../../middleware/rate-limit');
+const { apiRateLimit } = require('../../middleware/rate-limit');
 const respond = require('../../utils/respond');
 const { ROLES } = require('../users/user.constants');
 const schemas = require('./trip.schemas');
@@ -15,7 +15,7 @@ const byId = { params: schemas.tripIdParams };
 
 const pageMeta = ({ page, limit }, total) => ({ page, limit, total, totalPages: Math.ceil(total / limit) });
 
-router.use(authRateLimit, authenticate);
+router.use(apiRateLimit, authenticate);
 
 // Static paths come before /:id so they are not read as a trip id.
 router.get('/search', validate({ query: schemas.searchQuery }), async (req, res) => {
