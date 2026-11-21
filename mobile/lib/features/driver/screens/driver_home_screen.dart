@@ -29,7 +29,9 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
 
   Future<void> _reload() async {
     final future = widget.repository.myProfile();
-    setState(() => _future = future);
+    setState(() {
+      _future = future;
+    });
     await future.then((_) {}, onError: (_) {});
   }
 
