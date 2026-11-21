@@ -29,6 +29,8 @@ const schema = z
       .transform((value) => value === 'true'),
     AUTH_RATE_LIMIT_WINDOW_MINUTES: z.coerce.number().int().positive().default(15),
     AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(30),
+    API_RATE_LIMIT_WINDOW_MINUTES: z.coerce.number().int().positive().default(15),
+    API_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(300),
   })
   .refine((env) => !(env.NODE_ENV === 'production' && env.SMS_PROVIDER === 'console'), {
     message: 'SMS_PROVIDER=console prints OTP codes to the log and cannot be used in production',

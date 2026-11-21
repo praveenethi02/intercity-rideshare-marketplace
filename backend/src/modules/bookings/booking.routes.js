@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const authenticate = require('../../middleware/authenticate');
 const validate = require('../../middleware/validate');
-const { authRateLimit } = require('../../middleware/rate-limit');
+const { apiRateLimit } = require('../../middleware/rate-limit');
 const respond = require('../../utils/respond');
 const schemas = require('./booking.schemas');
 const bookingService = require('./booking.service');
@@ -11,7 +11,7 @@ const byId = { params: schemas.bookingIdParams };
 
 const pageMeta = ({ page, limit }, total) => ({ page, limit, total, totalPages: Math.ceil(total / limit) });
 
-router.use(authRateLimit, authenticate);
+router.use(apiRateLimit, authenticate);
 
 router.post('/', validate({ body: schemas.createBooking }), async (req, res) => {
   const booking = await bookingService.createBooking(req.user, req.validated.body);
