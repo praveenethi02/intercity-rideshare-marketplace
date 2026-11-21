@@ -28,7 +28,9 @@ class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
 
   Future<void> _reload() async {
     final f = AppServices.of(context).trips.savedRoutes();
-    setState(() => _future = f);
+    setState(() {
+      _future = f;
+    });
     await f.catchError((_) => <SavedRoute>[]);
   }
 

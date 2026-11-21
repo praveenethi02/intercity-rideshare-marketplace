@@ -32,7 +32,9 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
   Future<void> _reload() async {
     final f = AppServices.of(context).trips.search(widget.query);
-    setState(() => _future = f);
+    setState(() {
+      _future = f;
+    });
     try {
       await f;
     } catch (_) {}
