@@ -428,4 +428,107 @@ void main() {
       expect(find.text('No cancelled trips.'), findsOneWidget);
     });
   });
+
+  // SCRUM-287: reloading used to return a Future from the setState callback, which throws.
+  group('Reloading the driver screens', () {
+    Map<String, dynamic> verification() => {
+          'verification': {
+            'id': null,
+            'status': 'PENDING',
+            'reason': null,
+            'missingDocuments': ['PROFILE_PHOTO'],
+            'documents': [],
+            'submittedAt': null,
+            'decidedAt': null,
+          },
+        };
+
+    Map<String, dynamic> earnings() => {
+          'earnings': {
+            'currency': 'LKR',
+            'seatEarnings': 0,
+            'cargoEarnings': 0,
+            'platformFees': 0,
+            'paidOut': 0,
+            'pendingPayout': 0,
+            'completedTrips': 7,
+          },
+        };
+
+    /// Fails the first request, so the screen shows Try again, then answers with [data].
+    MockClientHandler failOnce(Map<String, dynamic> Function() data) {
+      var calls = 0;
+      return (_) async => ++calls == 1 ? _fail(500, 'INTERNAL_ERROR', 'Server down') : _ok(data());
+    }
+
+    Future<void> retry(WidgetTester tester) async {
+      expect(find.text('Try again'), findsOneWidget);
+      await tester.tap(find.text('Try again'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    testWidgets('the documents screen reloads after Try again', (tester) async {
+      await _show(
+        tester,
+        DriverDocumentsScreen(
+          repository: _repository(failOnce(() => {'driver': _driver(documents: ['NIC_FRONT'])})),
+          pickFile: () async => null,
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      await retry(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('1 of 5 uploaded'), findsOneWidget);
+    });
+
+    testWidgets('an upload says it worked and shows no error', (tester) async {
+      final uploaded = <String>[];
+      final repository = _repository((request) async {
+        if (request.method == 'POST') {
+          uploaded.add('NIC_FRONT');
+          return _ok({'document': _document('NIC_FRONT')});
+        }
+        return _ok({'driver': _driver(documents: uploaded)});
+      });
+
+      await _show(
+        tester,
+        DriverDocumentsScreen(
+          repository: repository,
+          pickFile: () async => const PickedDocument([1, 2, 3], 'nic.png'),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final nicCard = find.ancestor(of: find.text('NIC (front)'), matching: find.byType(Card));
+      await tester.tap(find.descendant(of: nicCard, matching: find.text('Upload')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('NIC (front) uploaded'), findsOneWidget);
+      expect(find.textContaining('setState'), findsNothing);
+      expect(find.text('1 of 5 uploaded'), findsOneWidget);
+    });
+
+    testWidgets('the verification screen reloads after Try again', (tester) async {
+      await _show(tester, DriverVerificationScreen(repository: _repository(failOnce(verification))));
+      await tester.pump(const Duration(milliseconds: 100));
+      await retry(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Profile photo'), findsOneWidget);
+    });
+
+    testWidgets('the earnings screen reloads after Try again', (tester) async {
+      await _show(tester, DriverEarningsScreen(repository: _repository(failOnce(earnings))));
+      await tester.pump(const Duration(milliseconds: 100));
+      await retry(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('7'), findsOneWidget);
+    });
+  });
 }

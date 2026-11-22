@@ -40,7 +40,9 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
   late Future<DriverProfile?> _future = widget.repository.myProfile();
   final Set<String> _uploading = {};
 
-  void _reload() => setState(() => _future = widget.repository.myProfile());
+  void _reload() => setState(() {
+        _future = widget.repository.myProfile();
+      });
 
   Future<void> _upload(DriverProfile driver, String type) async {
     final replacesApproved = driver.isApproved && type != 'PROFILE_PHOTO';

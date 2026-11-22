@@ -19,7 +19,9 @@ class DriverVerificationScreen extends StatefulWidget {
 class _DriverVerificationScreenState extends State<DriverVerificationScreen> {
   late Future<DriverVerification> _future = widget.repository.verification();
 
-  void _reload() => setState(() => _future = widget.repository.verification());
+  void _reload() => setState(() {
+        _future = widget.repository.verification();
+      });
 
   Future<void> _openDocuments() async {
     await Navigator.of(context).push(
