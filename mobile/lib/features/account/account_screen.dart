@@ -14,6 +14,9 @@ class AccountScreen extends StatelessWidget {
 
   /// Opens the Driver tab. Null for admins, who have no driver tab.
   final VoidCallback? onOpenDriver;
+  
+  /// Opens My bookings.
+  final VoidCallback? onOpenBookings;
 
   const AccountScreen({
     super.key,
@@ -21,6 +24,7 @@ class AccountScreen extends StatelessWidget {
     required this.onSaveProfile,
     required this.onSignOut,
     this.onOpenDriver,
+    this.onOpenBookings,
   });
 
   Future<void> _editProfile(BuildContext context) async {
@@ -50,6 +54,18 @@ class AccountScreen extends StatelessWidget {
         padding: AppSpacing.screen,
         children: [
           _ProfileHeader(user: user),
+          if (onOpenBookings != null) ...[
+            const SectionTitle('Trips'),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.confirmation_number_outlined),
+                title: const Text('My bookings'),
+                subtitle: const Text('Your seats on upcoming and past trips'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: onOpenBookings,
+              ),
+            ),
+          ],
           const SectionTitle('Profile'),
           Card(
             child: Column(children: [
