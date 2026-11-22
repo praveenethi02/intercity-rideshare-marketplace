@@ -4,7 +4,6 @@ import 'package:http/http.dart' as http;
 import 'core/api_client.dart';
 import 'core/app_services.dart';
 import 'core/auth_service.dart';
-import 'core/formatters.dart';
 import 'core/session_store.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/common_widgets.dart';
@@ -12,6 +11,7 @@ import 'features/auth/auth.dart';
 import 'features/account/account_screen.dart';
 import 'features/account/edit_profile_screen.dart' show SaveProfile;
 import 'features/account/splash_screen.dart';
+import 'features/bookings/bookings.dart';
 import 'features/driver/driver.dart';
 import 'features/home/home_screen.dart';
 import 'features/trips/trips.dart';
@@ -36,6 +36,7 @@ class _RideshareAppState extends State<RideshareApp> {
   TripRepository? _trips;
   DriverRepository? _drivers;
   VehicleApi? _vehicles;
+  BookingApi? _bookings;
   Vehicle? _vehicle;
   String? _baseUrl;
   bool _restoring = true;
@@ -95,6 +96,7 @@ class _RideshareAppState extends State<RideshareApp> {
       _trips = TripRepository(auth.api);
       _drivers = DriverRepository(auth.api);
       _vehicles = VehicleApi(auth.api);
+      _bookings = BookingApi(auth.api);
       _vehicle = null;
     });
     if (auth.user?.isDriver ?? false) _checkDriverVehicle();
@@ -107,6 +109,7 @@ class _RideshareAppState extends State<RideshareApp> {
       _trips = null;
       _drivers = null;
       _vehicles = null;
+      _bookings = null;
       _vehicle = null;
     });
   }
@@ -129,6 +132,20 @@ class _RideshareAppState extends State<RideshareApp> {
     setState(() => _vehicle = vehicle);
     if (vehicles == null) return 'Could not load your vehicles: $failure';
     return vehicle == null ? noUsableVehicleMessage(vehicles) : null;
+  }
+
+  /// Book on a FIXED-price trip opens the booking screens (SCRUM-304).
+  /// Bidding on AUCTION trips comes in Sprint 3.
+  Future<void> _bookSegment(BuildContext context, SegmentSelection selection) async {
+    final api = _bookings;
+    if (api == null) return;
+    if (selection.pricingMode == PricingMode.auction) {
+      showSnack(context, 'Bidding on auction trips is coming soon.');
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => ConfirmBookingScreen(api: api, selection: selection)),
+    );
   }
 
   /// Saves the profile, then rebuilds so Home and Account show the new name at once.
@@ -166,7 +183,7 @@ class _RideshareAppState extends State<RideshareApp> {
               // passengerSeats, which can be fewer than totalSeats - 1, so build the capacity from it.
               vehicleSeatCapacity: _vehicle == null ? null : _vehicle!.passengerSeats + 1,
               checkDriverVehicle: _checkDriverVehicle,
-              onBookSegment: _demoBookingHandler,
+              onBookSegment: _bookSegment,
               child: child!,
             ),
       onGenerateRoute: (settings) => _vehicles == null ? null : vehicleRoute(settings, _vehicles!),
@@ -182,6 +199,7 @@ class _RideshareAppState extends State<RideshareApp> {
         onSignOut: _signOut,
         onBecameDriver: _becameDriver,
         onSaveProfile: _saveProfile,
+        bookings: _bookings!,
       );
     }
     if (_restoring) return const SplashScreen();
@@ -205,21 +223,6 @@ class _RideshareAppState extends State<RideshareApp> {
   }
 }
 
-/// Placeholder until the Booking / Auction modules plug in their screens.
-Future<void> _demoBookingHandler(BuildContext context, SegmentSelection s) async {
-  await showDialog<void>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text(s.pricingMode == PricingMode.auction ? 'Bid (coming soon)' : 'Booking (coming soon)'),
-      content: Text(
-        'Stops ${s.fromStop} → ${s.toStop}\n'
-        '${s.seats} seat(s) at ${formatLkr(s.pricePerSeatCents)} each\n\n'
-        'The Booking / Auction module opens its screen here and calls reserveSeats on the server.',
-      ),
-      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
-    ),
-  );
-}
 
 class HomeShell extends StatefulWidget {
   final AppUser user;
@@ -227,6 +230,7 @@ class HomeShell extends StatefulWidget {
   final Future<void> Function() onSignOut;
   final VoidCallback onBecameDriver;
   final SaveProfile onSaveProfile;
+  final BookingApi bookings;
   const HomeShell({
     super.key,
     required this.user,
@@ -234,6 +238,7 @@ class HomeShell extends StatefulWidget {
     required this.onSignOut,
     required this.onBecameDriver,
     required this.onSaveProfile,
+    required this.bookings,
   });
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -276,6 +281,9 @@ class _HomeShellState extends State<HomeShell> {
         onSaveProfile: widget.onSaveProfile,
         onSignOut: widget.onSignOut,
         onOpenDriver: driverTab == null ? null : () => _go(driverTab),
+        onOpenBookings: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => MyBookingsScreen(api: widget.bookings)),
+        ),
       ),
     ];
     return Scaffold(
