@@ -72,11 +72,21 @@ paths:
         - { name: seats, in: query, schema: { type: integer, minimum: 1, maximum: 14, default: 1 } }
         - { name: radiusKm, in: query, schema: { type: number, minimum: 0.5, maximum: 30, default: 5 } }
         - { name: pricingMode, in: query, schema: { $ref: '#/components/schemas/PricingMode' } }
+        - { name: maxPriceCents, in: query, description: Highest segmentPriceCents (seat price for the passenger's segment), inclusive, schema: { type: integer, minimum: 0 } }
+        - { name: departAfter, in: query, description: 'Pickup time (pickup.plannedAt, else departureAt) at or after this Sri Lankan clock time. Must be before departBefore, else 422', schema: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', example: '06:00' } }
+        - { name: departBefore, in: query, description: Pickup time at or before this Sri Lankan clock time, schema: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', example: '09:30' } }
+        - { name: allowsCargo, in: query, description: 'Only trips that take cargo. Only "true" is accepted', schema: { type: string, enum: ['true'] } }
+        - { name: minCargoKg, in: query, description: Only cargo trips with at least this cargoCapacityKg, schema: { type: number, minimum: 0, exclusiveMinimum: true, maximum: 2000 } }
+        - { name: sort, in: query, description: 'earliest = pickup time, cheapest = segmentPriceCents, closest = walking distance to pickup + from drop. Ties are broken by tripId', schema: { type: string, enum: [earliest, cheapest, closest], default: earliest } }
         - { $ref: '#/components/parameters/Page' }
         - { $ref: '#/components/parameters/Limit' }
+      description: |
+        The signed-in user's own trips are not returned (booking them is refused with OWN_TRIP).
+        Every filter and the sort are applied before paging, so meta.total counts the filtered
+        matches and pages stay stable.
       responses:
         '200':
-          description: Matching trips, earliest first
+          description: Matching trips, sorted by `sort` (default earliest pickup)
           content:
             application/json:
               schema:
@@ -297,7 +307,7 @@ components:
             code:
               type: string
               example: TRIP_LOCKED
-              description: VALIDATION_ERROR, UNAUTHORIZED, FORBIDDEN, TRIP_NOT_FOUND, NOT_TRIP_OWNER, DRIVER_NOT_VERIFIED, VEHICLE_NOT_OWNED, VEHICLE_NOT_APPROVED, VEHICLE_INACTIVE, TOO_MANY_SEATS, DEPARTURE_TOO_SOON, DEPARTURE_TOO_FAR, INVALID_ARRIVAL, INVALID_STOPS, CARGO_CAPACITY_REQUIRED, TRIP_LOCKED, INVALID_STATUS_CHANGE, DEPARTURE_PASSED, TOO_EARLY_TO_START, INVALID_SEGMENT, ROUTE_NAME_TAKEN, SAVED_ROUTE_NOT_FOUND
+              description: VALIDATION_ERROR, UNAUTHORIZED, FORBIDDEN, TRIP_NOT_FOUND, NOT_TRIP_OWNER, DRIVER_NOT_VERIFIED, VEHICLE_NOT_OWNED, VEHICLE_NOT_APPROVED, VEHICLE_INACTIVE, TOO_MANY_SEATS, DEPARTURE_TOO_SOON, DEPARTURE_TOO_FAR, INVALID_ARRIVAL, INVALID_STOPS, CARGO_CAPACITY_REQUIRED, TRIP_LOCKED, INVALID_STATUS_CHANGE, DEPARTURE_PASSED, TOO_EARLY_TO_START, INVALID_SEGMENT, CARGO_OVER_VEHICLE_LIMIT, ROUTE_NAME_TAKEN, SAVED_ROUTE_NOT_FOUND
             details:
               description: For VALIDATION_ERROR a list of { field, message }, e.g. field body.stops
               oneOf:
@@ -442,8 +452,11 @@ components:
             plannedAt: { type: string, format: date-time, nullable: true }
             distanceFromYourDestinationKm: { type: number }
         segmentDistanceKm: { type: number }
-        seatsAvailable: { type: integer }
+        seatsOffered: { type: integer, description: Seats the driver offers on the trip }
+        seatsAvailable: { type: integer, description: Free seats on the passenger's segment }
         segmentPriceCents: { type: integer, description: FIXED seat price or AUCTION suggested starting bid for this segment }
+        estimatedArrivalAt: { type: string, format: date-time, nullable: true, description: When the whole trip is expected to end }
+        cargoCapacityKg: { type: number, nullable: true, description: 'Cargo space in kg; null when the trip takes no cargo. No cargo bookings exist yet, so this is also the free space' }
 
     SegmentAvailability:
       type: object
@@ -451,8 +464,21 @@ components:
         tripId: { type: string, format: uuid }
         fromStop: { type: integer }
         toStop: { type: integer }
-        seatsAvailable: { type: integer }
+        seatsOffered: { type: integer }
+        seatsAvailable: { type: integer, description: Free seats on the whole segment (its busiest leg) }
         segmentPriceCents: { type: integer }
+        allowsCargo: { type: boolean }
+        cargoCapacityKg: { type: number, nullable: true, description: Null when the trip takes no cargo }
+        legs:
+          type: array
+          description: The legs from fromStop to toStop
+          items:
+            type: object
+            properties:
+              legIndex: { type: integer }
+              fromName: { type: string }
+              toName: { type: string }
+              seatsAvailable: { type: integer }
 
     SavedRoute:
       type: object
