@@ -1,6 +1,10 @@
 // A seat booking from the bookings API (SCRUM-78). See docs/api/changes/bookings.md.
 // Money is LKR cents, the same as the trips feature.
 
+import '../../trips/models/driver_vehicle.dart';
+
+DateTime? _toLocalOrNull(dynamic v) => v == null ? null : DateTime.parse(v as String).toLocal();
+
 /// The pickup or drop stop of a booking.
 class BookingStop {
   final int order;
@@ -12,7 +16,7 @@ class BookingStop {
   factory BookingStop.fromJson(Map<String, dynamic> j) => BookingStop(
         order: j['stopOrder'] as int,
         name: (j['name'] as String?) ?? 'Stop ${j['stopOrder']}',
-        plannedTime: j['plannedAt'] == null ? null : DateTime.parse(j['plannedAt'] as String).toLocal(),
+        plannedTime: _toLocalOrNull(j['plannedAt']),
       );
 }
 
@@ -31,6 +35,16 @@ class Booking {
   final int pricePerSeatCents;
   final int totalCents;
   final String? cancelReason;
+  final String? driverId;
+
+  // Journey details: only from GET /bookings/:id, and not from older servers.
+  final TripVehicle? vehicle;
+
+  /// From pickup to drop.
+  final List<BookingStop> stops;
+  final DateTime? startedAt;
+  final DateTime? completedAt;
+  final String? tripCancelReason;
 
   const Booking({
     required this.id,
@@ -47,6 +61,12 @@ class Booking {
     required this.pricePerSeatCents,
     required this.totalCents,
     this.cancelReason,
+    this.driverId,
+    this.vehicle,
+    this.stops = const [],
+    this.startedAt,
+    this.completedAt,
+    this.tripCancelReason,
   });
 
   factory Booking.fromJson(Map<String, dynamic> j) {
@@ -66,6 +86,14 @@ class Booking {
       pricePerSeatCents: j['pricePerSeatCents'] as int,
       totalCents: j['totalCents'] as int,
       cancelReason: j['cancelReason'] as String?,
+      driverId: trip['driverId'] as String?,
+      vehicle: trip['vehicle'] == null ? null : TripVehicle.fromJson(trip['vehicle'] as Map<String, dynamic>),
+      stops: ((trip['stops'] as List<dynamic>?) ?? const [])
+          .map((s) => BookingStop.fromJson(s as Map<String, dynamic>))
+          .toList(),
+      startedAt: _toLocalOrNull(trip['startedAt']),
+      completedAt: _toLocalOrNull(trip['completedAt']),
+      tripCancelReason: trip['cancelReason'] as String?,
     );
   }
 

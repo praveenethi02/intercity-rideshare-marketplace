@@ -1,4 +1,6 @@
 import '../../../core/api_client.dart';
+import '../../trips/data/trip_repository.dart';
+import '../../trips/models/driver_vehicle.dart';
 import '../../trips/models/search.dart' show SegmentSelection;
 import 'booking_models.dart';
 
@@ -27,6 +29,12 @@ class BookingApi {
         .map((b) => Booking.fromJson(b as Map<String, dynamic>))
         .toList();
   }
+
+  /// One booking with its journey details.
+  Future<Booking> get(String id) async => _booking(await api.get('/bookings/$id'));
+
+  /// The public profile of the trip's driver.
+  Future<DriverPublicProfile> driverProfile(String id) => TripRepository(api).driverProfile(id);
 
   Future<Booking> cancel(String id) async => _booking(await api.post('/bookings/$id/cancel', {}));
 }

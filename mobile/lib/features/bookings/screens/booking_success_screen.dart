@@ -6,6 +6,7 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../core/widgets/common_widgets.dart';
 import '../data/booking_api.dart';
 import '../data/booking_models.dart';
+import 'booking_details_screen.dart';
 import 'my_bookings_screen.dart';
 
 /// Step 2 of booking (SCRUM-304): the booking is confirmed, with its reference.
@@ -62,6 +63,13 @@ class BookingSuccessScreen extends StatelessWidget {
               MaterialPageRoute<void>(builder: (_) => MyBookingsScreen(api: api)),
             ),
             child: const Text('View my bookings'),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          OutlinedButton(
+            onPressed: () => Navigator.of(context).pushReplacement(
+              MaterialPageRoute<void>(builder: (_) => BookingDetailsScreen(api: api, bookingId: booking.id)),
+            ),
+            child: const Text('View details'),
           ),
           const SizedBox(height: AppSpacing.sm),
           TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Done')),

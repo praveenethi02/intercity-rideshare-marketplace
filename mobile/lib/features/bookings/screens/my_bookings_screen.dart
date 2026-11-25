@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../../core/api_client.dart';
 import '../../../core/formatters.dart';
-import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/widgets/common_widgets.dart';
+import '../../trips/widgets/search_result_card.dart' show fitBadge;
 import '../data/booking_api.dart';
 import '../data/booking_models.dart';
+import '../widgets/booking_widgets.dart';
+import 'booking_details_screen.dart';
 
 /// The passenger's bookings (SCRUM-79, 80, 304): upcoming and past, and cancelling.
 class MyBookingsScreen extends StatelessWidget {
@@ -51,15 +53,16 @@ class _BookingListState extends State<_BookingList> {
     await future.then((_) {}, onError: (_) {});
   }
 
-  Future<void> _cancel(Booking booking) async {
-    final ok = await confirmDialog(
-      context,
-      title: 'Cancel booking ${booking.reference}?',
-      message: 'Your ${booking.seats == 1 ? 'seat goes' : '${booking.seats} seats go'} back to the driver '
-          'for other passengers.',
-      confirmLabel: 'Cancel booking',
-      destructive: true,
+  Future<void> _open(Booking booking) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => BookingDetailsScreen(api: widget.api, bookingId: booking.id)),
     );
+    // The booking may have been cancelled there.
+    if (mounted) await _reload();
+  }
+
+  Future<void> _cancel(Booking booking) async {
+    final ok = await confirmCancelBooking(context, booking);
     if (!ok || !mounted) return;
     try {
       await widget.api.cancel(booking.id);
@@ -93,7 +96,11 @@ class _BookingListState extends State<_BookingList> {
             padding: AppSpacing.screen,
             itemCount: bookings.length,
             separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.md),
-            itemBuilder: (_, i) => _BookingCard(booking: bookings[i], onCancel: () => _cancel(bookings[i])),
+            itemBuilder: (_, i) => _BookingCard(
+              booking: bookings[i],
+              onTap: () => _open(bookings[i]),
+              onCancel: () => _cancel(bookings[i]),
+            ),
           ),
         );
       },
@@ -103,28 +110,19 @@ class _BookingListState extends State<_BookingList> {
 
 class _BookingCard extends StatelessWidget {
   final Booking booking;
+  final VoidCallback onTap;
   final VoidCallback onCancel;
-  const _BookingCard({required this.booking, required this.onCancel});
-
-  (String, StatusTone) get _status {
-    if (booking.isCancelled) return ('Cancelled', StatusTone.danger);
-    return switch (booking.tripStatus) {
-      'IN_PROGRESS' => ('On the way', StatusTone.warning),
-      'COMPLETED' => ('Completed', StatusTone.neutral),
-      'CANCELLED' => ('Trip cancelled', StatusTone.danger),
-      _ => ('Confirmed', StatusTone.success),
-    };
-  }
+  const _BookingCard({required this.booking, required this.onTap, required this.onCancel});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final (label, tone) = _status;
     return AppCard(
+      onTap: onTap,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Expanded(child: Text(booking.reference, style: theme.textTheme.titleSmall)),
-          AppBadge(label, tone: tone),
+          Expanded(child: Align(alignment: Alignment.centerRight, child: fitBadge(BookingStatusBadge(booking)))),
         ]),
         const SizedBox(height: AppSpacing.md),
         Text('${booking.pickup.name} → ${booking.drop.name}', style: theme.textTheme.titleMedium),
