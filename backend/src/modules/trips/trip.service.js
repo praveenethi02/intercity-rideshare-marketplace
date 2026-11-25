@@ -407,17 +407,18 @@ async function getSegmentAvailability(id, fromStop, toStop) {
 
 // ---------- seat holds: for the Booking and Auction modules ----------
 
-/**
- * Holds seats on the legs between two stops. Call it with the transaction your module uses to
- * save the booking, so both are saved together or not at all:
- *   await db.transaction(async (tx) => { await reserveSeats(tx, tripId, 1, 3, 2); ... });
- */
-async function reserveSeats(tx, tripId, fromStop, toStop, seats) {
-  const trip = await repo.lock(tripId, tx);
-  if (!trip) throw tripNotFound();
-  if (trip.status !== TRIP_STATUS.SCHEDULED) {
-    throw new ApiError(409, 'TRIP_NOT_BOOKABLE', 'Seats can only be reserved on a published trip');
+/** A seat count must be a whole number of at least 1. A negative one would move seats the wrong way. */
+function checkSeats(seats) {
+  if (!Number.isInteger(seats) || seats < 1) {
+    throw new ApiError(422, 'INVALID_SEATS', 'The number of seats must be a whole number of at least 1');
   }
+}
+
+/**
+ * Locks the legs of a segment for a seat change. 422 INVALID_SEGMENT when the drop is not after the
+ * pickup or a stop is not on the trip. Nothing is changed when it throws.
+ */
+async function lockSegment(tx, tripId, fromStop, toStop) {
   let legs;
   try {
     legs = legsFor(fromStop, toStop);
@@ -426,6 +427,25 @@ async function reserveSeats(tx, tripId, fromStop, toStop, seats) {
   }
   const locked = await repo.lockLegs(tripId, fromStop, toStop, tx);
   if (locked.length !== legs.length) throw new ApiError(422, 'INVALID_SEGMENT', 'The stops are not on this trip');
+  return locked;
+}
+
+/**
+ * Holds seats on the legs between two stops. Call it with the transaction your module uses to
+ * save the booking, so both are saved together or not at all:
+ *   await db.transaction(async (tx) => { await reserveSeats(tx, tripId, 1, 3, 2); ... });
+ */
+async function reserveSeats(tx, tripId, fromStop, toStop, seats) {
+  checkSeats(seats);
+  const trip = await repo.lock(tripId, tx);
+  if (!trip) throw tripNotFound();
+  if (trip.status !== TRIP_STATUS.SCHEDULED) {
+    throw new ApiError(409, 'TRIP_NOT_BOOKABLE', 'Seats can only be reserved on a published trip');
+  }
+  if (new Date(trip.departure_at) <= new Date()) {
+    throw new ApiError(409, 'TRIP_DEPARTED', 'This trip has already left');
+  }
+  const locked = await lockSegment(tx, tripId, fromStop, toStop);
   const busiest = Math.max(...locked.map((leg) => leg.seats_reserved));
   if (busiest + seats > trip.seats_offered) {
     throw new ApiError(409, 'NOT_ENOUGH_SEATS', 'Not enough seats on this part of the route', {
@@ -437,11 +457,16 @@ async function reserveSeats(tx, tripId, fromStop, toStop, seats) {
   return { tripId, fromStop, toStop, seats };
 }
 
-/** Gives seats back (cancelled booking, refund, unpaid auction win). Use inside a transaction. */
+/**
+ * Gives seats back (cancelled booking, refund, unpaid auction win). Use inside a transaction.
+ * Checks the seats and the segment like reserveSeats does; no leg changes when it throws.
+ */
 async function releaseSeats(tx, tripId, fromStop, toStop, seats) {
-  await repo.lock(tripId, tx);
-  const locked = await repo.lockLegs(tripId, fromStop, toStop, tx);
-  if (locked.length === 0 || locked.some((leg) => leg.seats_reserved < seats)) {
+  checkSeats(seats);
+  const trip = await repo.lock(tripId, tx);
+  if (!trip) throw tripNotFound();
+  const locked = await lockSegment(tx, tripId, fromStop, toStop);
+  if (locked.some((leg) => leg.seats_reserved < seats)) {
     throw new ApiError(409, 'RELEASE_MISMATCH', 'Cannot release more seats than are reserved');
   }
   await repo.addToLegs(tripId, fromStop, toStop, -seats, tx);

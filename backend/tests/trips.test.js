@@ -329,6 +329,154 @@ describe('search and seats per segment', () => {
   });
 });
 
+describe('seat holds and releases (SCRUM-77, SCRUM-81)', () => {
+  const reserve = (tripId, from, to, seats) => db.transaction((tx) => reserveSeats(tx, tripId, from, to, seats));
+  const release = (tripId, from, to, seats) => db.transaction((tx) => releaseSeats(tx, tripId, from, to, seats));
+  const legSeats = async (tripId) =>
+    (await db.query('SELECT seats_reserved FROM trip_legs WHERE trip_id = $1 ORDER BY leg_index', [tripId])).rows.map(
+      (r) => r.seats_reserved,
+    );
+  const seatsAvailable = async (tripId) =>
+    (await db.query('SELECT seats_available FROM trips WHERE id = $1', [tripId])).rows[0].seats_available;
+
+  test('reserving and releasing a part changes only its legs and the full-route count', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token); // 3 seats, legs 0..2
+
+    await expect(reserve(trip.id, 1, 3, 2)).resolves.toEqual({ tripId: trip.id, fromStop: 1, toStop: 3, seats: 2 });
+    expect(await legSeats(trip.id)).toEqual([0, 2, 2]);
+    expect(await seatsAvailable(trip.id)).toBe(1);
+
+    await release(trip.id, 1, 2, 2);
+    expect(await legSeats(trip.id)).toEqual([0, 0, 2]);
+    expect(await seatsAvailable(trip.id)).toBe(1);
+
+    await release(trip.id, 2, 3, 2);
+    expect(await legSeats(trip.id)).toEqual([0, 0, 0]);
+    expect(await seatsAvailable(trip.id)).toBe(3);
+  });
+
+  test.each([0, -1, 1.5, '2', null])('refuses %p seats on reserve and release', async (seats) => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token);
+    await reserve(trip.id, 0, 3, 1);
+
+    await expect(reserve(trip.id, 0, 3, seats)).rejects.toMatchObject({ status: 422, code: 'INVALID_SEATS' });
+    await expect(release(trip.id, 0, 3, seats)).rejects.toMatchObject({ status: 422, code: 'INVALID_SEATS' });
+    expect(await legSeats(trip.id)).toEqual([1, 1, 1]);
+  });
+
+  test.each([
+    ['drop before pickup', 2, 1],
+    ['the same stop', 1, 1],
+    ['a stop that is not on the trip', 1, 9],
+    ['a negative stop', -1, 2],
+  ])('release refuses %s and changes no leg', async (_name, from, to) => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token);
+    await reserve(trip.id, 0, 3, 2);
+
+    await expect(release(trip.id, from, to, 1)).rejects.toMatchObject({ status: 422, code: 'INVALID_SEGMENT' });
+    await expect(reserve(trip.id, from, to, 1)).rejects.toMatchObject({ status: 422, code: 'INVALID_SEGMENT' });
+    expect(await legSeats(trip.id)).toEqual([2, 2, 2]);
+  });
+
+  test('a missing trip is 404 for reserve and release', async () => {
+    const missing = crypto.randomUUID();
+    await expect(reserve(missing, 0, 1, 1)).rejects.toMatchObject({ status: 404, code: 'TRIP_NOT_FOUND' });
+    await expect(release(missing, 0, 1, 1)).rejects.toMatchObject({ status: 404, code: 'TRIP_NOT_FOUND' });
+  });
+
+  test('releasing more than is reserved, or the same seats twice, fails', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token);
+    await reserve(trip.id, 0, 2, 2);
+
+    await expect(release(trip.id, 0, 3, 1)).rejects.toMatchObject({ status: 409, code: 'RELEASE_MISMATCH' });
+    await release(trip.id, 0, 2, 2);
+    await expect(release(trip.id, 0, 2, 2)).rejects.toMatchObject({ status: 409, code: 'RELEASE_MISMATCH' });
+    expect(await legSeats(trip.id)).toEqual([0, 0, 0]);
+  });
+
+  test('refuses to reserve on a trip whose departure time has passed', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token);
+    await db.query("UPDATE trips SET departure_at = now() - interval '1 minute' WHERE id = $1", [trip.id]);
+
+    await expect(reserve(trip.id, 0, 3, 1)).rejects.toMatchObject({ status: 409, code: 'TRIP_DEPARTED' });
+    expect(await legSeats(trip.id)).toEqual([0, 0, 0]);
+  });
+
+  test('a failure later in the transaction rolls the seats back', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token);
+
+    await expect(
+      db.transaction(async (tx) => {
+        await reserveSeats(tx, trip.id, 0, 3, 2);
+        throw new Error('saving the booking failed');
+      }),
+    ).rejects.toThrow('saving the booking failed');
+    await expect(
+      db.transaction(async (tx) => {
+        await reserveSeats(tx, trip.id, 0, 1, 3);
+        await reserveSeats(tx, trip.id, 0, 2, 1); // leg 0 is full now
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_ENOUGH_SEATS' });
+
+    expect(await legSeats(trip.id)).toEqual([0, 0, 0]);
+    expect(await seatsAvailable(trip.id)).toBe(3);
+  });
+
+  test('two reservations for the last seat: exactly one wins', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token);
+    await reserve(trip.id, 0, 3, 2);
+
+    const outcomes = await Promise.allSettled([reserve(trip.id, 1, 2, 1), reserve(trip.id, 0, 3, 1)]);
+
+    expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+    const [lost] = outcomes.filter((o) => o.status === 'rejected');
+    expect(lost.reason).toMatchObject({ status: 409, code: 'NOT_ENOUGH_SEATS' });
+    expect(Math.max(...(await legSeats(trip.id)))).toBe(3);
+    expect(await seatsAvailable(trip.id)).toBe(0);
+  });
+
+  test('seats on parts that do not overlap can be sold to different passengers', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token); // FIXED, 3 seats
+    const [a, b, c] = [await signedInPassenger(), await signedInPassenger(), await signedInPassenger()];
+    const book = (p, fromStop, toStop) => post('/bookings', { tripId: trip.id, fromStop, toStop, seats: 3 }, p.token);
+
+    expect((await book(a, 0, 1)).status).toBe(201); // Colombo -> Kadawatha
+    expect((await book(b, 1, 3)).status).toBe(201); // Kadawatha -> Kandy
+    const late = await book(c, 0, 2);
+    expect(late.status).toBe(409);
+    expect(late.body.meta.code).toBe('NOT_ENOUGH_SEATS');
+    expect(await legSeats(trip.id)).toEqual([3, 3, 3]);
+  });
+
+  test('cancelling a booking over the API makes the seats show in search again', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token); // 3 seats
+    const passenger = await signedInPassenger();
+    const searcher = await signedInPassenger();
+    const date = colomboDate(trip.departureAt);
+    const search = (seats) =>
+      get(`/trips/search?fromLat=7.0&fromLng=79.95&toLat=7.25&toLng=80.35&date=${date}&seats=${seats}`, searcher.token);
+
+    const booking = await post('/bookings', { tripId: trip.id, fromStop: 0, toStop: 3, seats: 2 }, passenger.token);
+    expect(booking.status).toBe(201);
+    expect((await search(1)).body.data.results).toMatchObject([{ tripId: trip.id, seatsAvailable: 1 }]);
+    expect((await search(2)).body.data.results).toEqual([]);
+
+    const cancelled = await post(`/bookings/${booking.body.data.booking.id}/cancel`, {}, passenger.token);
+    expect(cancelled.status).toBe(200);
+    expect((await search(2)).body.data.results).toMatchObject([{ tripId: trip.id, seatsAvailable: 3 }]);
+    expect(await legSeats(trip.id)).toEqual([0, 0, 0]);
+  });
+});
+
 describe('seat and cargo capacity (SCRUM-71, SCRUM-74)', () => {
   const kadawathaToKegalle = (token, departureAt) =>
     get(
