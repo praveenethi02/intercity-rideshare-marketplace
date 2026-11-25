@@ -46,13 +46,14 @@ let plateCounter = 1000;
 
 /**
  * A vehicle in the vehicles table (migration 301), owned by the driver. By default it is an
- * APPROVED, active car with 5 seats in total, 4 of them for passengers.
+ * APPROVED, active car with 5 seats in total, 4 of them for passengers, and no cargo space.
  */
 async function addVehicle(driverUserId, overrides = {}) {
   const v = {
     vehicleType: 'CAR',
     totalSeats: 5,
     passengerSeats: 4,
+    cargoCapacityKg: 0,
     verificationStatus: 'APPROVED',
     isActive: true,
     ...overrides,
@@ -60,8 +61,8 @@ async function addVehicle(driverUserId, overrides = {}) {
   plateCounter += 1;
   const { rows } = await db.query(
     `INSERT INTO vehicles (driver_user_id, vehicle_type, make, model, year, color, plate_number,
-       total_seats, passenger_seats, verification_status, is_active)
-     VALUES ($1, $2, 'Toyota', 'Axio', 2016, 'White', $3, $4, $5, $6, $7)
+       total_seats, passenger_seats, cargo_capacity_kg, verification_status, is_active)
+     VALUES ($1, $2, 'Toyota', 'Axio', 2016, 'White', $3, $4, $5, $6, $7, $8)
      RETURNING id`,
     [
       driverUserId,
@@ -69,6 +70,7 @@ async function addVehicle(driverUserId, overrides = {}) {
       `WP CAB-${plateCounter}`,
       v.totalSeats,
       v.passengerSeats,
+      v.cargoCapacityKg,
       v.verificationStatus,
       v.isActive,
     ],
@@ -324,6 +326,583 @@ describe('search and seats per segment', () => {
     const res = await get(`/trips/${trip.id}/availability?fromStop=2&toStop=1`, driver.token);
 
     expect(res.status).toBe(422);
+  });
+});
+
+describe('seat holds and releases (SCRUM-77, SCRUM-81)', () => {
+  const reserve = (tripId, from, to, seats) => db.transaction((tx) => reserveSeats(tx, tripId, from, to, seats));
+  const release = (tripId, from, to, seats) => db.transaction((tx) => releaseSeats(tx, tripId, from, to, seats));
+  const legSeats = async (tripId) =>
+    (await db.query('SELECT seats_reserved FROM trip_legs WHERE trip_id = $1 ORDER BY leg_index', [tripId])).rows.map(
+      (r) => r.seats_reserved,
+    );
+  const seatsAvailable = async (tripId) =>
+    (await db.query('SELECT seats_available FROM trips WHERE id = $1', [tripId])).rows[0].seats_available;
+
+  test('reserving and releasing a part changes only its legs and the full-route count', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token); // 3 seats, legs 0..2
+
+    await expect(reserve(trip.id, 1, 3, 2)).resolves.toEqual({ tripId: trip.id, fromStop: 1, toStop: 3, seats: 2 });
+    expect(await legSeats(trip.id)).toEqual([0, 2, 2]);
+    expect(await seatsAvailable(trip.id)).toBe(1);
+
+    await release(trip.id, 1, 2, 2);
+    expect(await legSeats(trip.id)).toEqual([0, 0, 2]);
+    expect(await seatsAvailable(trip.id)).toBe(1);
+
+    await release(trip.id, 2, 3, 2);
+    expect(await legSeats(trip.id)).toEqual([0, 0, 0]);
+    expect(await seatsAvailable(trip.id)).toBe(3);
+  });
+
+  test.each([0, -1, 1.5, '2', null])('refuses %p seats on reserve and release', async (seats) => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token);
+    await reserve(trip.id, 0, 3, 1);
+
+    await expect(reserve(trip.id, 0, 3, seats)).rejects.toMatchObject({ status: 422, code: 'INVALID_SEATS' });
+    await expect(release(trip.id, 0, 3, seats)).rejects.toMatchObject({ status: 422, code: 'INVALID_SEATS' });
+    expect(await legSeats(trip.id)).toEqual([1, 1, 1]);
+  });
+
+  test.each([
+    ['drop before pickup', 2, 1],
+    ['the same stop', 1, 1],
+    ['a stop that is not on the trip', 1, 9],
+    ['a negative stop', -1, 2],
+  ])('release refuses %s and changes no leg', async (_name, from, to) => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token);
+    await reserve(trip.id, 0, 3, 2);
+
+    await expect(release(trip.id, from, to, 1)).rejects.toMatchObject({ status: 422, code: 'INVALID_SEGMENT' });
+    await expect(reserve(trip.id, from, to, 1)).rejects.toMatchObject({ status: 422, code: 'INVALID_SEGMENT' });
+    expect(await legSeats(trip.id)).toEqual([2, 2, 2]);
+  });
+
+  test('a missing trip is 404 for reserve and release', async () => {
+    const missing = crypto.randomUUID();
+    await expect(reserve(missing, 0, 1, 1)).rejects.toMatchObject({ status: 404, code: 'TRIP_NOT_FOUND' });
+    await expect(release(missing, 0, 1, 1)).rejects.toMatchObject({ status: 404, code: 'TRIP_NOT_FOUND' });
+  });
+
+  test('releasing more than is reserved, or the same seats twice, fails', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token);
+    await reserve(trip.id, 0, 2, 2);
+
+    await expect(release(trip.id, 0, 3, 1)).rejects.toMatchObject({ status: 409, code: 'RELEASE_MISMATCH' });
+    await release(trip.id, 0, 2, 2);
+    await expect(release(trip.id, 0, 2, 2)).rejects.toMatchObject({ status: 409, code: 'RELEASE_MISMATCH' });
+    expect(await legSeats(trip.id)).toEqual([0, 0, 0]);
+  });
+
+  test('refuses to reserve on a trip whose departure time has passed', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token);
+    await db.query("UPDATE trips SET departure_at = now() - interval '1 minute' WHERE id = $1", [trip.id]);
+
+    await expect(reserve(trip.id, 0, 3, 1)).rejects.toMatchObject({ status: 409, code: 'TRIP_DEPARTED' });
+    expect(await legSeats(trip.id)).toEqual([0, 0, 0]);
+  });
+
+  test('a failure later in the transaction rolls the seats back', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token);
+
+    await expect(
+      db.transaction(async (tx) => {
+        await reserveSeats(tx, trip.id, 0, 3, 2);
+        throw new Error('saving the booking failed');
+      }),
+    ).rejects.toThrow('saving the booking failed');
+    await expect(
+      db.transaction(async (tx) => {
+        await reserveSeats(tx, trip.id, 0, 1, 3);
+        await reserveSeats(tx, trip.id, 0, 2, 1); // leg 0 is full now
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_ENOUGH_SEATS' });
+
+    expect(await legSeats(trip.id)).toEqual([0, 0, 0]);
+    expect(await seatsAvailable(trip.id)).toBe(3);
+  });
+
+  test('two reservations for the last seat: exactly one wins', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token);
+    await reserve(trip.id, 0, 3, 2);
+
+    const outcomes = await Promise.allSettled([reserve(trip.id, 1, 2, 1), reserve(trip.id, 0, 3, 1)]);
+
+    expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+    const [lost] = outcomes.filter((o) => o.status === 'rejected');
+    expect(lost.reason).toMatchObject({ status: 409, code: 'NOT_ENOUGH_SEATS' });
+    expect(Math.max(...(await legSeats(trip.id)))).toBe(3);
+    expect(await seatsAvailable(trip.id)).toBe(0);
+  });
+
+  test('seats on parts that do not overlap can be sold to different passengers', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token); // FIXED, 3 seats
+    const [a, b, c] = [await signedInPassenger(), await signedInPassenger(), await signedInPassenger()];
+    const book = (p, fromStop, toStop) => post('/bookings', { tripId: trip.id, fromStop, toStop, seats: 3 }, p.token);
+
+    expect((await book(a, 0, 1)).status).toBe(201); // Colombo -> Kadawatha
+    expect((await book(b, 1, 3)).status).toBe(201); // Kadawatha -> Kandy
+    const late = await book(c, 0, 2);
+    expect(late.status).toBe(409);
+    expect(late.body.meta.code).toBe('NOT_ENOUGH_SEATS');
+    expect(await legSeats(trip.id)).toEqual([3, 3, 3]);
+  });
+
+  test('cancelling a booking over the API makes the seats show in search again', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token); // 3 seats
+    const passenger = await signedInPassenger();
+    const searcher = await signedInPassenger();
+    const date = colomboDate(trip.departureAt);
+    const search = (seats) =>
+      get(`/trips/search?fromLat=7.0&fromLng=79.95&toLat=7.25&toLng=80.35&date=${date}&seats=${seats}`, searcher.token);
+
+    const booking = await post('/bookings', { tripId: trip.id, fromStop: 0, toStop: 3, seats: 2 }, passenger.token);
+    expect(booking.status).toBe(201);
+    expect((await search(1)).body.data.results).toMatchObject([{ tripId: trip.id, seatsAvailable: 1 }]);
+    expect((await search(2)).body.data.results).toEqual([]);
+
+    const cancelled = await post(`/bookings/${booking.body.data.booking.id}/cancel`, {}, passenger.token);
+    expect(cancelled.status).toBe(200);
+    expect((await search(2)).body.data.results).toMatchObject([{ tripId: trip.id, seatsAvailable: 3 }]);
+    expect(await legSeats(trip.id)).toEqual([0, 0, 0]);
+  });
+});
+
+describe('seat and cargo capacity (SCRUM-71, SCRUM-74)', () => {
+  const kadawathaToKegalle = (token, departureAt) =>
+    get(
+      `/trips/search?fromLat=7.0&fromLng=79.95&toLat=7.25&toLng=80.35&date=${colomboDate(departureAt)}`,
+      token,
+    );
+
+  async function cargoDriver(vehicleCargoKg = 500) {
+    const driver = await signedInDriver();
+    const vehicleId = await addVehicle(driver.user.id, { cargoCapacityKg: vehicleCargoKg });
+    return { ...driver, vehicleId };
+  }
+
+  test('search results show seats offered, arrival and cargo capacity as a number', async () => {
+    const driver = await cargoDriver();
+    const departureAt = inHours(26);
+    const cargo = await publishedTrip(driver.token, {
+      vehicleId: driver.vehicleId,
+      departureAt,
+      estimatedArrivalAt: inHours(30),
+      allowsCargo: true,
+      cargoCapacityKg: 120.5,
+    });
+    const plain = await publishedTrip(driver.token, { departureAt: inHours(27) });
+    const passenger = await signedInPassenger();
+
+    const res = await kadawathaToKegalle(passenger.token, departureAt);
+    const byId = Object.fromEntries(res.body.data.results.map((r) => [r.tripId, r]));
+
+    expect(byId[cargo.id]).toMatchObject({
+      seatsOffered: 3,
+      seatsAvailable: 3,
+      allowsCargo: true,
+      cargoCapacityKg: 120.5,
+    });
+    expect(new Date(byId[cargo.id].estimatedArrivalAt).toISOString()).toBe(cargo.estimatedArrivalAt);
+    expect(byId[plain.id]).toMatchObject({
+      seatsOffered: 3,
+      allowsCargo: false,
+      cargoCapacityKg: null,
+      estimatedArrivalAt: null,
+    });
+    expect((await get(`/trips/${cargo.id}`, passenger.token)).body.data.trip.cargoCapacityKg).toBe(120.5);
+  });
+
+  test('availability lists seats offered, cargo and free seats on each leg of the part', async () => {
+    const driver = await cargoDriver();
+    const trip = await publishedTrip(driver.token, {
+      vehicleId: driver.vehicleId,
+      allowsCargo: true,
+      cargoCapacityKg: 80,
+    });
+    const passenger = await signedInPassenger();
+    await db.transaction((tx) => reserveSeats(tx, trip.id, 1, 2, 2)); // Kadawatha -> Kegalle
+
+    const res = await get(`/trips/${trip.id}/availability?fromStop=0&toStop=3`, passenger.token);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.availability).toMatchObject({
+      seatsOffered: 3,
+      seatsAvailable: 1,
+      allowsCargo: true,
+      cargoCapacityKg: 80,
+      legs: [
+        { legIndex: 0, fromName: 'Colombo Fort', toName: 'Kadawatha', seatsAvailable: 3 },
+        { legIndex: 1, fromName: 'Kadawatha', toName: 'Kegalle', seatsAvailable: 1 },
+        { legIndex: 2, fromName: 'Kegalle', toName: 'Kandy', seatsAvailable: 3 },
+      ],
+    });
+    const part = await get(`/trips/${trip.id}/availability?fromStop=2&toStop=3`, passenger.token);
+    expect(part.body.data.availability.legs).toEqual([
+      { legIndex: 2, fromName: 'Kegalle', toName: 'Kandy', seatsAvailable: 3 },
+    ]);
+  });
+
+  test('a trip cannot offer more cargo than its vehicle carries', async () => {
+    const driver = await cargoDriver(100);
+
+    const cargoTrip = (cargoCapacityKg) =>
+      createTripRequest(driver.token, { vehicleId: driver.vehicleId, allowsCargo: true, cargoCapacityKg });
+
+    const over = await cargoTrip(100.5);
+    expect(over.status).toBe(422);
+    expect(over.body.meta.code).toBe('CARGO_OVER_VEHICLE_LIMIT');
+
+    const full = await cargoTrip(100);
+    expect(full.status).toBe(201);
+    expect(full.body.data.trip.cargoCapacityKg).toBe(100);
+  });
+
+  test('a vehicle without cargo space can only offer trips without cargo', async () => {
+    const driver = await signedInDriver(); // default car: 0 kg
+
+    const res = await createTripRequest(driver.token, { allowsCargo: true, cargoCapacityKg: 10 });
+    expect(res.status).toBe(422);
+    expect(res.body.meta.code).toBe('CARGO_OVER_VEHICLE_LIMIT');
+    expect((await createTripRequest(driver.token, { allowsCargo: false })).status).toBe(201);
+  });
+
+  test('checks the cargo limit again when the cargo fields change', async () => {
+    const driver = await cargoDriver(100);
+    const trip = await createTrip(driver.token, { vehicleId: driver.vehicleId }); // a draft, no cargo
+
+    const over = await patch(`/trips/${trip.id}`, driver.token, { allowsCargo: true, cargoCapacityKg: 150 });
+    expect(over.status).toBe(422);
+    expect(over.body.meta.code).toBe('CARGO_OVER_VEHICLE_LIMIT');
+
+    const ok = await patch(`/trips/${trip.id}`, driver.token, { allowsCargo: true, cargoCapacityKg: 60 });
+    expect(ok.status).toBe(200);
+    expect(ok.body.data.trip).toMatchObject({ allowsCargo: true, cargoCapacityKg: 60 });
+    expect((await patch(`/trips/${trip.id}`, driver.token, { cargoCapacityKg: 101 })).body.meta.code).toBe(
+      'CARGO_OVER_VEHICLE_LIMIT',
+    );
+
+    // Other edits do not re-check cargo, and turning cargo off is always allowed.
+    await db.query('UPDATE vehicles SET cargo_capacity_kg = 0 WHERE id = $1', [driver.vehicleId]);
+    expect((await patch(`/trips/${trip.id}`, driver.token, { notes: 'AC van' })).status).toBe(200);
+    const off = await patch(`/trips/${trip.id}`, driver.token, { allowsCargo: false });
+    expect(off.status).toBe(200);
+    expect(off.body.data.trip).toMatchObject({ allowsCargo: false, cargoCapacityKg: null });
+  });
+});
+
+describe('route-segment matching (SCRUM-72)', () => {
+  // Colombo Fort (0) -> Kadawatha (1) -> Kegalle (2) -> Kandy (3)
+  const NEAR = {
+    fort: { lat: 6.935, lng: 79.843 },
+    kadawatha: { lat: 7.0, lng: 79.95 },
+    kegalle: { lat: 7.25, lng: 80.35 },
+    kandy: { lat: 7.29, lng: 80.63 },
+  };
+  const DAY = colomboDate(inHours(48));
+  const at = (hhmm, day = DAY) => new Date(`${day}T${hhmm}:00+05:30`).toISOString();
+  const nextDay = (day) => new Date(new Date(`${day}T00:00:00Z`).getTime() + 86_400_000).toISOString().slice(0, 10);
+
+  const search = (token, from, to, params = {}) =>
+    get(
+      `/trips/search?${new URLSearchParams({
+        fromLat: from.lat,
+        fromLng: from.lng,
+        toLat: to.lat,
+        toLng: to.lng,
+        date: DAY,
+        ...params,
+      })}`,
+      token,
+    );
+  const results = async (...args) => (await search(...args)).body.data.results;
+
+  test('pickup and drop in the middle of the route', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token, { departureAt: at('08:00') });
+    const passenger = await signedInPassenger();
+
+    const [hit, ...rest] = await results(passenger.token, NEAR.kadawatha, NEAR.kegalle);
+
+    expect(rest).toEqual([]);
+    expect(hit).toMatchObject({ tripId: trip.id, pickup: { stopOrder: 1 }, drop: { stopOrder: 2 } });
+    expect(hit.segmentDistanceKm).toBeLessThan(trip.distanceKm);
+  });
+
+  test('the whole route', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token, { departureAt: at('08:00') });
+    const passenger = await signedInPassenger();
+
+    const [hit] = await results(passenger.token, NEAR.fort, NEAR.kandy);
+
+    expect(hit).toMatchObject({ tripId: trip.id, pickup: { stopOrder: 0 }, drop: { stopOrder: 3 } });
+    expect(hit.segmentPriceCents).toBe(250000);
+    expect(hit.segmentDistanceKm).toBe(trip.distanceKm);
+  });
+
+  test('a passenger going the other way is not matched', async () => {
+    const driver = await signedInDriver();
+    await publishedTrip(driver.token, { departureAt: at('08:00') });
+    const passenger = await signedInPassenger();
+
+    expect(await results(passenger.token, NEAR.kegalle, NEAR.kadawatha)).toEqual([]);
+    expect(await results(passenger.token, NEAR.kandy, NEAR.fort)).toEqual([]);
+  });
+
+  test('stops outside the radius are not matched', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token, { departureAt: at('08:00') });
+    const passenger = await signedInPassenger();
+    const gampaha = { lat: 7.0917, lng: 79.9997 }; // about 11 km from Kadawatha
+
+    expect(await results(passenger.token, gampaha, NEAR.kegalle)).toEqual([]);
+    expect(await results(passenger.token, gampaha, NEAR.kegalle, { radiusKm: 5 })).toEqual([]);
+    const wide = await results(passenger.token, gampaha, NEAR.kegalle, { radiusKm: 15 });
+    expect(wide.map((r) => r.tripId)).toEqual([trip.id]);
+    expect(wide[0].pickup.distanceFromYouKm).toBeGreaterThan(5);
+  });
+
+  test('two nearby stops: the closest pair is used, one result per trip', async () => {
+    const driver = await signedInDriver();
+    const stops = [
+      STOPS[0],
+      STOPS[1], // Kadawatha
+      { name: 'Kadawatha North', lat: 7.02, lng: 79.965 }, // about 2.5 km further on
+      STOPS[2],
+      STOPS[3],
+    ];
+    const trip = await publishedTrip(driver.token, { departureAt: at('08:00'), stops });
+    const passenger = await signedInPassenger();
+
+    // Standing next to Kadawatha North; Kadawatha is also inside the 5 km radius.
+    const hits = await results(passenger.token, { lat: 7.019, lng: 79.964 }, NEAR.kegalle);
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({ tripId: trip.id, pickup: { stopOrder: 2, name: 'Kadawatha North' } });
+    expect(hits[0].pickup.distanceFromYouKm).toBeLessThan(0.5);
+  });
+
+  test('a full leg outside the segment does not block it, a full leg inside does', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token, { departureAt: at('08:00') }); // 3 seats
+    const passenger = await signedInPassenger();
+
+    // Colombo -> Kadawatha (leg 0) and Kegalle -> Kandy (leg 2) are full.
+    await db.transaction((tx) => reserveSeats(tx, trip.id, 0, 1, 3));
+    await db.transaction((tx) => reserveSeats(tx, trip.id, 2, 3, 3));
+
+    const middle = await results(passenger.token, NEAR.kadawatha, NEAR.kegalle, { seats: 3 });
+    expect(middle).toMatchObject([{ tripId: trip.id, seatsAvailable: 3 }]);
+    expect(await results(passenger.token, NEAR.kadawatha, NEAR.kandy)).toEqual([]);
+    expect(await results(passenger.token, NEAR.fort, NEAR.kegalle)).toEqual([]);
+  });
+
+  test('only SCHEDULED trips that have not left are matched', async () => {
+    const driver = await signedInDriver();
+    const passenger = await signedInPassenger();
+    const today = colomboDate(inHours(1));
+    const soon = (minutes) => `now() + interval '${minutes} minutes'`;
+
+    await createTrip(driver.token, { departureAt: at('08:00') }); // DRAFT
+    const cancelled = await publishedTrip(driver.token, { departureAt: at('09:00') });
+    await post(`/trips/${cancelled.id}/cancel`, { reason: 'Car broke down' }, driver.token);
+    expect(await results(passenger.token, NEAR.kadawatha, NEAR.kegalle)).toEqual([]);
+
+    // Trips leaving within the hour: one has left, one is driving, one is done, one is still open.
+    const departed = await publishedTrip(driver.token);
+    const driving = await publishedTrip(driver.token);
+    const done = await publishedTrip(driver.token);
+    const open = await publishedTrip(driver.token);
+    await db.query(`UPDATE trips SET departure_at = now() - interval '5 minutes' WHERE id = $1`, [departed.id]);
+    for (const trip of [driving, done, open]) {
+      await db.query(`UPDATE trips SET departure_at = ${soon(20)} WHERE id = $1`, [trip.id]);
+    }
+    expect((await post(`/trips/${driving.id}/start`, {}, driver.token)).status).toBe(200);
+    expect((await post(`/trips/${done.id}/start`, {}, driver.token)).status).toBe(200);
+    expect((await post(`/trips/${done.id}/complete`, {}, driver.token)).status).toBe(200);
+
+    // The 20-minute trips may fall on tomorrow's date late at night, so search both days.
+    const found = [
+      ...(await results(passenger.token, NEAR.kadawatha, NEAR.kegalle, { date: today })),
+      ...(await results(passenger.token, NEAR.kadawatha, NEAR.kegalle, { date: nextDay(today) })),
+    ].map((r) => r.tripId);
+    expect(found).toEqual([open.id]);
+  });
+
+  test('a trip near midnight is found on its Sri Lankan date', async () => {
+    const driver = await signedInDriver();
+    const lateNight = await publishedTrip(driver.token, { departureAt: at('23:50') });
+    const afterMidnight = await publishedTrip(driver.token, { departureAt: at('00:10', nextDay(DAY)) });
+    const passenger = await signedInPassenger();
+    const ids = async (date) => (await results(passenger.token, NEAR.fort, NEAR.kandy, { date })).map((r) => r.tripId);
+
+    // 23:50 in Colombo is 18:20 UTC on the same date; 00:10 is 18:40 UTC on the date before.
+    expect(await ids(DAY)).toEqual([lateNight.id]);
+    expect(await ids(nextDay(DAY))).toEqual([afterMidnight.id]);
+  });
+});
+
+describe('search filters and sorting (SCRUM-67, SCRUM-69)', () => {
+  // A Sri Lankan day two days from now, so every time on it is far enough ahead to publish.
+  const DAY = colomboDate(inHours(48));
+  /** An ISO moment at a Sri Lankan clock time on DAY. */
+  const at = (hhmm, day = DAY) => new Date(`${day}T${hhmm}:00+05:30`).toISOString();
+  const FULL_ROUTE = { fromLat: 6.9344, fromLng: 79.8428, toLat: 7.2906, toLng: 80.6337 };
+
+  /** GET /trips/search from Colombo Fort to Kandy on DAY, with extra query params. */
+  const search = (token, params = {}) =>
+    get(`/trips/search?${new URLSearchParams({ ...FULL_ROUTE, date: DAY, ...params })}`, token);
+  const tripIds = (res) => res.body.data.results.map((r) => r.tripId);
+
+  test("leaves out the signed-in user's own trips", async () => {
+    const me = await signedInDriver();
+    const other = await signedInDriver();
+    const mine = await publishedTrip(me.token, { departureAt: at('08:00') });
+    const theirs = await publishedTrip(other.token, { departureAt: at('09:00') });
+
+    const res = await search(me.token);
+
+    expect(res.status).toBe(200);
+    expect(tripIds(res)).toEqual([theirs.id]);
+    expect(res.body.meta.total).toBe(1);
+    expect(tripIds(await search(other.token))).toEqual([mine.id]);
+  });
+
+  test('maxPriceCents compares the segment seat price, inclusive', async () => {
+    const driver = await signedInDriver();
+    const cheap = await publishedTrip(driver.token, { departureAt: at('08:00'), basePriceCents: 150000 });
+    await publishedTrip(driver.token, { departureAt: at('09:00'), basePriceCents: 250000 });
+    const passenger = await signedInPassenger();
+
+    expect(tripIds(await search(passenger.token, { maxPriceCents: 150000 }))).toEqual([cheap.id]);
+    expect(tripIds(await search(passenger.token, { maxPriceCents: 149999 }))).toEqual([]);
+    expect(await search(passenger.token, { maxPriceCents: 300000 })).toHaveProperty('body.meta.total', 2);
+
+    // Kadawatha -> Kegalle is a part of the route, so its seat price is lower than the full fare.
+    const part = await search(passenger.token, {
+      fromLat: 7.0,
+      fromLng: 79.95,
+      toLat: 7.25,
+      toLng: 80.35,
+      maxPriceCents: 150000,
+    });
+    expect(part.body.data.results).toHaveLength(2);
+    expect(part.body.data.results.every((r) => r.segmentPriceCents <= 150000)).toBe(true);
+  });
+
+  test('departAfter and departBefore use the Sri Lankan pickup time, inclusive', async () => {
+    const driver = await signedInDriver();
+    const six = await publishedTrip(driver.token, { departureAt: at('06:00') });
+    const nine = await publishedTrip(driver.token, { departureAt: at('09:00') });
+    const evening = await publishedTrip(driver.token, { departureAt: at('18:30') });
+    const passenger = await signedInPassenger();
+
+    const morning = await search(passenger.token, { departAfter: '06:00', departBefore: '09:00' });
+    expect(tripIds(morning)).toEqual([six.id, nine.id]);
+    expect(morning.body.meta.total).toBe(2);
+    expect(tripIds(await search(passenger.token, { departAfter: '09:01' }))).toEqual([evening.id]);
+    expect(tripIds(await search(passenger.token, { departBefore: '05:59' }))).toEqual([]);
+  });
+
+  test("uses the pickup stop's planned time, not the trip's departure", async () => {
+    const driver = await signedInDriver();
+    // Leaves Colombo at 05:00 and reaches Kadawatha at 07:30.
+    const stops = [STOPS[0], { ...STOPS[1], plannedAt: at('07:30') }, STOPS[2], STOPS[3]];
+    const trip = await publishedTrip(driver.token, { departureAt: at('05:00'), stops });
+    const passenger = await signedInPassenger();
+    const kadawathaToKegalle = { fromLat: 7.0, fromLng: 79.95, toLat: 7.25, toLng: 80.35 };
+
+    expect(tripIds(await search(passenger.token, { ...kadawathaToKegalle, departAfter: '07:30' }))).toEqual([trip.id]);
+    expect(tripIds(await search(passenger.token, { ...kadawathaToKegalle, departBefore: '07:29' }))).toEqual([]);
+    // From Colombo the pickup time is the departure.
+    expect(tripIds(await search(passenger.token, { departBefore: '05:00' }))).toEqual([trip.id]);
+  });
+
+  test('cargo filters keep trips that take parcels with enough capacity', async () => {
+    const { user, token } = await signedInDriver();
+    const vanId = await addVehicle(user.id, { cargoCapacityKg: 500 });
+    const cargo = await publishedTrip(token, {
+      vehicleId: vanId,
+      departureAt: at('08:00'),
+      allowsCargo: true,
+      cargoCapacityKg: 100,
+    });
+    await publishedTrip(token, { departureAt: at('09:00') });
+    const passenger = await signedInPassenger();
+
+    expect(tripIds(await search(passenger.token, { allowsCargo: 'true' }))).toEqual([cargo.id]);
+    expect(tripIds(await search(passenger.token, { minCargoKg: 100 }))).toEqual([cargo.id]);
+    expect(tripIds(await search(passenger.token, { minCargoKg: 100.5 }))).toEqual([]);
+  });
+
+  test.each([
+    ['departAfter equal to departBefore', { departAfter: '10:00', departBefore: '10:00' }],
+    ['departAfter after departBefore', { departAfter: '18:00', departBefore: '07:00' }],
+    ['a time that does not exist', { departAfter: '24:00' }],
+    ['a time without minutes', { departBefore: '9' }],
+    ['allowsCargo=false', { allowsCargo: 'false' }],
+    ['allowsCargo=1', { allowsCargo: '1' }],
+    ['minCargoKg=0', { minCargoKg: 0 }],
+    ['a negative maxPriceCents', { maxPriceCents: -1 }],
+    ['a fractional maxPriceCents', { maxPriceCents: 10.5 }],
+    ['an unknown sort', { sort: 'random' }],
+    ['an unknown parameter', { colour: 'red' }],
+  ])('rejects %s', async (_name, params) => {
+    const passenger = await signedInPassenger();
+    const res = await search(passenger.token, params);
+    expect(res.status).toBe(422);
+    expect(res.body.meta.code).toBe('VALIDATION_ERROR');
+  });
+
+  test('sorts by pickup time, price or walking distance, ties by trip id', async () => {
+    const driver = await signedInDriver();
+    const early = await publishedTrip(driver.token, { departureAt: at('06:00'), basePriceCents: 300000 });
+    const late = await publishedTrip(driver.token, { departureAt: at('20:00'), basePriceCents: 100000 });
+    // Starts 3 km from the passenger instead of at the Fort.
+    const farStops = [{ name: 'Maradana', lat: 6.9289, lng: 79.8656 }, ...STOPS.slice(1)];
+    const far = await publishedTrip(driver.token, {
+      departureAt: at('12:00'),
+      basePriceCents: 200000,
+      stops: farStops,
+    });
+    const passenger = await signedInPassenger();
+
+    expect(tripIds(await search(passenger.token))).toEqual([early.id, far.id, late.id]); // earliest is the default
+    expect(tripIds(await search(passenger.token, { sort: 'earliest' }))).toEqual([early.id, far.id, late.id]);
+    expect(tripIds(await search(passenger.token, { sort: 'cheapest' }))).toEqual([late.id, far.id, early.id]);
+    const closest = tripIds(await search(passenger.token, { sort: 'closest' }));
+    expect(closest.at(-1)).toBe(far.id);
+    expect(closest.slice(0, 2)).toEqual([early.id, late.id].sort()); // same distance: by trip id
+  });
+
+  test('filters and sorts before paging, so pages and totals agree', async () => {
+    const driver = await signedInDriver();
+    const prices = [100000, 400000, 200000, 500000, 300000];
+    for (const [i, basePriceCents] of prices.entries()) {
+      await publishedTrip(driver.token, { departureAt: at(`0${i + 5}:00`), basePriceCents });
+    }
+    const passenger = await signedInPassenger();
+    const params = { sort: 'cheapest', maxPriceCents: 400000, limit: 2 };
+
+    const page1 = await search(passenger.token, params);
+    const page2 = await search(passenger.token, { ...params, page: 2 });
+    const page3 = await search(passenger.token, { ...params, page: 3 });
+
+    expect(page1.body.meta).toMatchObject({ page: 1, limit: 2, total: 4, totalPages: 2 });
+    const pricesInOrder = [...page1.body.data.results, ...page2.body.data.results].map((r) => r.segmentPriceCents);
+    expect(pricesInOrder).toEqual([100000, 200000, 300000, 400000]);
+    expect(page3.body.data.results).toEqual([]);
+    expect(page3.body.meta.total).toBe(4);
   });
 });
 

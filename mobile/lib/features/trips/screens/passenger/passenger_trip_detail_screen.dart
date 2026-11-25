@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/app_services.dart';
 import '../../../../core/formatters.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/common_widgets.dart';
 import '../../models/search.dart';
 import '../../models/trip.dart';
+import '../../widgets/search_result_card.dart';
 import '../../widgets/trip_widgets.dart';
 
-/// Passenger's view of a trip for their own segment (pickup → drop).
+/// Passenger's view of a trip for their own segment (pickup → drop): seats left on each leg,
+/// cargo space, times and price (SCRUM-71, SCRUM-73, SCRUM-74).
 /// The Book / Bid button hands a [SegmentSelection] to the Booking or
 /// Auction module via [AppServices.onBookSegment].
 class PassengerTripDetailScreen extends StatefulWidget {
@@ -41,7 +45,14 @@ class _PassengerTripDetailScreenState extends State<PassengerTripDetailScreen> {
     final repo = AppServices.of(context).trips;
     final trip = repo.getTrip(widget.tripId);
     final availability = repo.availability(widget.tripId, widget.fromStop, widget.toStop);
-    return (await trip, await availability);
+    final Trip loaded;
+    try {
+      loaded = await trip;
+    } catch (_) {
+      availability.ignore(); // only the first error is shown
+      rethrow;
+    }
+    return (loaded, await availability);
   }
 
   Future<void> _reload() async {
@@ -80,7 +91,7 @@ class _PassengerTripDetailScreenState extends State<PassengerTripDetailScreen> {
       body: FutureBuilder<(Trip, SegmentAvailability)>(
         future: _future,
         builder: (context, snap) {
-          if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
+          if (snap.connectionState != ConnectionState.done) return const SkeletonList(count: 4);
           if (snap.hasError) return ErrorView(error: snap.error!, onRetry: _reload);
           final (trip, a) = snap.data!;
           return _body(trip, a);
@@ -89,68 +100,158 @@ class _PassengerTripDetailScreenState extends State<PassengerTripDetailScreen> {
     );
   }
 
+  /// Free seats on each leg of the passenger's part. Older servers send no legs with the
+  /// availability, so they are taken from the trip then.
+  List<SegmentLeg> _legs(Trip trip, SegmentAvailability a) {
+    if (a.legs.isNotEmpty) return a.legs;
+    return [
+      for (final leg in trip.legs)
+        if (leg.legIndex >= widget.fromStop && leg.legIndex < widget.toStop && leg.legIndex + 1 < trip.stops.length)
+          SegmentLeg(
+            legIndex: leg.legIndex,
+            fromName: trip.stops[leg.legIndex].name,
+            toName: trip.stops[leg.legIndex + 1].name,
+            seatsAvailable: leg.seatsAvailable,
+          ),
+    ];
+  }
+
   Widget _body(Trip trip, SegmentAvailability a) {
     final theme = Theme.of(context);
+    final muted = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
     final pickup = trip.stops[widget.fromStop];
     final drop = trip.stops[widget.toStop];
     final km = (drop.kmFromStart ?? 0) - (pickup.kmFromStart ?? 0);
     final isAuction = trip.pricingMode == PricingMode.auction;
     final bookable = trip.status == TripStatus.scheduled && a.seatsAvailable >= widget.seats;
+    final seatsOffered = a.seatsOffered ?? trip.seatsOffered;
+    final allowsCargo = a.allowsCargo ?? trip.allowsCargo;
+    final cargoKg = a.cargoCapacityKg ?? trip.cargoCapacityKg;
+    // The drop stop's own time, or the trip's arrival when the passenger rides to the end.
+    final isLastStop = widget.toStop == trip.stops.length - 1;
+    final dropTime = drop.plannedTime ?? (isLastStop ? trip.estArrivalTime : null);
+    final legs = _legs(trip, a);
 
     return Column(children: [
       Expanded(
         child: RefreshIndicator(
           onRefresh: _reload,
-          child: ListView(padding: const EdgeInsets.all(16), children: [
-            Text('${pickup.name} → ${drop.name}', style: theme.textTheme.headlineSmall),
-            const SizedBox(height: 4),
-            Text('Part of ${trip.routeLabel}', style: theme.textTheme.bodyMedium),
-            const SizedBox(height: 8),
-            Wrap(spacing: 6, runSpacing: 6, children: [
-              TagChip(PricingMode.label(trip.pricingMode), icon: isAuction ? Icons.gavel : Icons.sell),
-              TagChip(formatKm(km), icon: Icons.route),
-              if (trip.allowsCargo) const TagChip('Takes cargo', icon: Icons.inventory_2),
-              if (trip.status != TripStatus.scheduled) TripStatusChip(trip.status),
-            ]),
-            const SectionTitle('Your ride'),
-            InfoRow(
-              icon: Icons.schedule,
-              label: 'Pickup time',
-              value: formatDateTime(pickup.plannedTime ?? trip.departureTime),
-            ),
-            if (drop.plannedTime != null)
-              InfoRow(icon: Icons.flag_outlined, label: 'Drop time', value: formatDateTime(drop.plannedTime!)),
-            InfoRow(
-              icon: Icons.payments_outlined,
-              label: isAuction ? 'Starting bid per seat' : 'Price per seat',
-              value: formatLkr(a.segmentPriceCents),
-            ),
-            if (!isAuction && widget.seats > 1)
-              InfoRow(
-                icon: Icons.calculate_outlined,
-                label: 'Total for ${widget.seats} seats',
-                value: formatLkr(a.segmentPriceCents * widget.seats),
-              ),
-            InfoRow(icon: Icons.event_seat, label: 'Seats left on your part', value: '${a.seatsAvailable}'),
-            if (trip.notes != null && trip.notes!.isNotEmpty)
-              InfoRow(icon: Icons.notes, label: 'Driver notes', value: trip.notes!),
-            if (isAuction)
-              const Card(
-                margin: EdgeInsets.only(top: 12),
-                child: ListTile(
-                  leading: Icon(Icons.info_outline),
-                  title: Text('This trip uses a seat auction'),
-                  subtitle: Text('Place a bid. The highest bids win the seats when the auction closes.'),
+          child: ListView(
+              // Pull to refresh must work even when the details fit on the screen.
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: AppSpacing.screen,
+              children: [
+                Text('${pickup.name} → ${drop.name}', style: theme.textTheme.headlineSmall),
+                const SizedBox(height: AppSpacing.xs),
+                Text('Part of ${trip.routeLabel}', style: theme.textTheme.bodyMedium),
+                const SizedBox(height: AppSpacing.sm),
+                Wrap(spacing: AppSpacing.sm, runSpacing: AppSpacing.sm, children: [
+                  fitBadge(AppBadge(
+                    PricingMode.label(trip.pricingMode),
+                    tone: StatusTone.info,
+                    icon: isAuction ? Icons.gavel : Icons.sell,
+                  )),
+                  fitBadge(AppBadge(formatKm(km), icon: Icons.route)),
+                  if (allowsCargo) fitBadge(const AppBadge('Takes cargo', icon: Icons.inventory_2_outlined)),
+                  if (trip.status != TripStatus.scheduled) TripStatusChip(trip.status),
+                ]),
+                const SectionTitle('Your ride'),
+                AppCard(
+                  child: Column(children: [
+                    InfoRow(
+                      icon: Icons.schedule,
+                      label: 'Pickup time',
+                      value: formatDateTime(pickup.plannedTime ?? trip.departureTime),
+                    ),
+                    InfoRow(
+                      icon: Icons.flag_outlined,
+                      label: drop.plannedTime == null ? 'Arrival (estimate)' : 'Drop time',
+                      value: dropTime == null ? 'Not given' : formatDateTime(dropTime),
+                    ),
+                    InfoRow(icon: Icons.route, label: 'Distance', value: formatKm(km)),
+                    InfoRow(
+                      icon: Icons.payments_outlined,
+                      label: isAuction ? 'Starting bid per seat' : 'Price per seat',
+                      value: formatLkr(a.segmentPriceCents),
+                    ),
+                    if (!isAuction)
+                      InfoRow(
+                        icon: Icons.calculate_outlined,
+                        label: 'Total for ${widget.seats} seat${widget.seats > 1 ? 's' : ''}',
+                        value: formatLkr(a.segmentPriceCents * widget.seats),
+                      ),
+                  ]),
                 ),
-              ),
-            const SectionTitle('Route'),
-            RouteTimeline(stops: trip.stops, highlightFrom: widget.fromStop, highlightTo: widget.toStop),
-          ]),
+                const SectionTitle('Seats'),
+                AppCard(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      Expanded(
+                        child: Text(
+                          '${seatsLeftLabel(a.seatsAvailable, seatsOffered)} on your part',
+                          style: theme.textTheme.titleMedium,
+                        ),
+                      ),
+                      AppBadge(
+                        a.seatsAvailable >= widget.seats ? 'Enough for you' : 'Not enough',
+                        tone: a.seatsAvailable >= widget.seats ? StatusTone.success : StatusTone.danger,
+                      ),
+                    ]),
+                    if (legs.isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      Text('Free seats on each part of your ride', style: muted),
+                      for (final leg in legs)
+                        Padding(
+                          padding: const EdgeInsets.only(top: AppSpacing.sm),
+                          child: Row(children: [
+                            Expanded(child: Text('${leg.fromName} → ${leg.toName}')),
+                            const SizedBox(width: AppSpacing.sm),
+                            AppBadge(
+                              '${leg.seatsAvailable} free',
+                              tone: leg.seatsAvailable == 0 ? StatusTone.danger : StatusTone.neutral,
+                              icon: Icons.event_seat,
+                            ),
+                          ]),
+                        ),
+                    ],
+                  ]),
+                ),
+                if (allowsCargo) ...[
+                  const SectionTitle('Cargo'),
+                  AppCard(
+                    child: InfoRow(
+                      icon: Icons.inventory_2_outlined,
+                      label: 'Cargo space',
+                      value: cargoKg == null ? 'Ask the driver' : 'Up to ${formatKg(cargoKg)}',
+                    ),
+                  ),
+                ],
+                if (trip.notes != null && trip.notes!.isNotEmpty) ...[
+                  const SectionTitle('Driver notes'),
+                  AppCard(child: Text(trip.notes!)),
+                ],
+                if (isAuction)
+                  Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.md),
+                    child: AppCard(
+                      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Icon(Icons.info_outline, color: theme.colorScheme.primary),
+                        const SizedBox(width: AppSpacing.md),
+                        const Expanded(
+                          child: Text('This trip uses a seat auction. Place a bid; the highest bids win the seats '
+                              'when the auction closes.'),
+                        ),
+                      ]),
+                    ),
+                  ),
+                const SectionTitle('Route'),
+                RouteTimeline(stops: trip.stops, highlightFrom: widget.fromStop, highlightTo: widget.toStop),
+              ]),
         ),
       ),
       SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: AppSpacing.screen,
           child: SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
@@ -161,7 +262,9 @@ class _PassengerTripDetailScreenState extends State<PassengerTripDetailScreen> {
                     ? (trip.status != TripStatus.scheduled ? 'Not available' : 'Not enough seats')
                     : isAuction
                         ? 'Place a bid'
-                        : 'Book ${widget.seats} seat${widget.seats > 1 ? 's' : ''} · ${formatLkr(a.segmentPriceCents * widget.seats)}',
+                        : 'Book ${widget.seats} seat${widget.seats > 1 ? 's' : ''} · '
+                            '${formatLkr(a.segmentPriceCents * widget.seats)}',
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ),

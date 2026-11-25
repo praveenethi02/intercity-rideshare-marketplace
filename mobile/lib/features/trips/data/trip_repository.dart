@@ -36,8 +36,7 @@ class TripRepository {
   Future<Trip> publish(String id) async => _trip(await api.post('/trips/$id/publish'));
   Future<Trip> start(String id) async => _trip(await api.post('/trips/$id/start'));
   Future<Trip> complete(String id) async => _trip(await api.post('/trips/$id/complete'));
-  Future<Trip> cancel(String id, String reason) async =>
-      _trip(await api.post('/trips/$id/cancel', {'reason': reason}));
+  Future<Trip> cancel(String id, String reason) async => _trip(await api.post('/trips/$id/cancel', {'reason': reason}));
 
   // ---------- saved routes ----------
   Future<List<SavedRoute>> savedRoutes() async {
@@ -58,15 +57,15 @@ class TripRepository {
   }
 
   // ---------- passenger ----------
-  Future<SearchPage> search(SearchQuery query) async {
-    final r = await api.get('/trips/search', query: query.toQuery());
-    final items = _list(r, 'results')
-        .map((t) => TripSearchResult.fromJson(t as Map<String, dynamic>))
-        .toList();
+  /// One page of trips. Filters and sort are sent to the server, so they apply to every page.
+  Future<SearchPage> search(SearchQuery query, {int page = 1, int limit = SearchQuery.pageSize}) async {
+    final r = await api.get('/trips/search', query: query.toQuery(page: page, limit: limit));
+    final items = _list(r, 'results').map((t) => TripSearchResult.fromJson(t as Map<String, dynamic>)).toList();
     return SearchPage(
       items: items,
       total: (r.meta['total'] as int?) ?? items.length,
       radiusKm: ((r.meta['radiusKm'] as num?) ?? 5).toDouble(),
+      page: page,
     );
   }
 

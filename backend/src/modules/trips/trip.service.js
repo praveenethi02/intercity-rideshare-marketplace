@@ -3,7 +3,7 @@ const ApiError = require('../../utils/ApiError');
 const { ROLES } = require('../users/user.constants');
 const repo = require('./trip.repository');
 const integrations = require('./trip.integrations');
-const { TRIP_STATUS, TRIP_RULES } = require('./trip.constants');
+const { TRIP_STATUS, TRIP_RULES, SEARCH_SORT } = require('./trip.constants');
 const { withDistanceFromStart, haversineKm, boundingBox } = require('./geo');
 const { legsFor, availableSeats, segmentPriceCents } = require('./segments');
 const { canTransition, editableFields } = require('./trip-lifecycle');
@@ -12,6 +12,8 @@ const MINUTE = 60_000;
 const DAY = 86_400_000;
 const km = (metres) => Math.round(metres / 100) / 10; // 1 decimal
 const round1 = (x) => Math.round(x * 10) / 10;
+/** pg returns NUMERIC columns as strings. The API always sends a number or null. */
+const numberOrNull = (value) => (value === null || value === undefined ? null : Number(value));
 
 const tripNotFound = () => new ApiError(404, 'TRIP_NOT_FOUND', 'Trip not found');
 
@@ -45,7 +47,7 @@ function toTrip(row, stops, legSeats) {
     basePriceCents: row.base_price_cents,
     distanceKm: km(row.distance_m),
     allowsCargo: row.allows_cargo,
-    cargoCapacityKg: row.cargo_capacity_kg,
+    cargoCapacityKg: numberOrNull(row.cargo_capacity_kg),
     notes: row.notes,
     cancelReason: row.cancel_reason,
     publishedAt: row.published_at,
@@ -146,6 +148,7 @@ async function createTrip(driver, input) {
   const tripId = await db.transaction(async (tx) => {
     await integrations.assertDriverEligible(driver.id, tx);
     await integrations.assertVehicleUsable(driver.id, input.vehicleId, input.seatsOffered, tx);
+    if (input.allowsCargo) await integrations.assertCargoWithinVehicle(input.vehicleId, input.cargoCapacityKg, tx);
     const row = await repo.insertTrip({ ...input, ...routeFields(stops), driverUserId: driver.id }, tx);
     await repo.replaceStops(row.id, stops, tx);
     return row.id;
@@ -184,6 +187,10 @@ async function updateTrip(user, id, changes) {
     const cargoCapacityKg = changes.cargoCapacityKg ?? trip.cargo_capacity_kg;
     if (allowsCargo && !cargoCapacityKg) {
       throw new ApiError(422, 'CARGO_CAPACITY_REQUIRED', 'cargoCapacityKg is required when allowsCargo is true');
+    }
+    const cargoChanged = changes.allowsCargo !== undefined || changes.cargoCapacityKg !== undefined;
+    if (allowsCargo && cargoChanged) {
+      await integrations.assertCargoWithinVehicle(trip.vehicle_id, cargoCapacityKg, tx);
     }
 
     const { stops: newStops, ...fields } = changes;
@@ -255,7 +262,44 @@ function dayRange(date) {
   return { dayStart: start.toISOString(), dayEnd: new Date(start.getTime() + DAY).toISOString() };
 }
 
-async function searchTrips(query) {
+/** "HH:mm" -> minutes since midnight. */
+const clockMinutes = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+
+// "+05:30" -> 330. Sri Lanka has no daylight saving, so a fixed offset is exact.
+const ZONE_OFFSET_MINUTES =
+  (TRIP_RULES.TIME_ZONE_OFFSET.startsWith('-') ? -1 : 1) * clockMinutes(TRIP_RULES.TIME_ZONE_OFFSET.slice(1));
+
+/** Minutes since midnight, Sri Lankan time, of a moment. */
+function colomboMinutes(moment) {
+  const local = new Date(moment).getTime() + ZONE_OFFSET_MINUTES * MINUTE;
+  return Math.floor((((local % DAY) + DAY) % DAY) / MINUTE);
+}
+
+/** Filters that need the matched segment (price, pickup time). Inclusive at both ends. */
+function passesFilters(result, query) {
+  if (query.maxPriceCents !== undefined && result.segmentPriceCents > query.maxPriceCents) return false;
+  const pickupMinutes = colomboMinutes(result.pickup.plannedAt ?? result.departureAt);
+  if (query.departAfter && pickupMinutes < clockMinutes(query.departAfter)) return false;
+  if (query.departBefore && pickupMinutes > clockMinutes(query.departBefore)) return false;
+  return true;
+}
+
+const pickupTime = (r) => new Date(r.pickup.plannedAt ?? r.departureAt).getTime();
+const walkingKm = (r) => r.pickup.distanceFromYouKm + r.drop.distanceFromYourDestinationKm;
+const byTripId = (a, b) => (a.tripId < b.tripId ? -1 : a.tripId > b.tripId ? 1 : 0);
+
+/** Comparators for ?sort=. Ties are broken by tripId so pages stay stable. */
+const SORTERS = {
+  [SEARCH_SORT.EARLIEST]: (a, b) => pickupTime(a) - pickupTime(b) || byTripId(a, b),
+  [SEARCH_SORT.CHEAPEST]: (a, b) => a.segmentPriceCents - b.segmentPriceCents || byTripId(a, b),
+  [SEARCH_SORT.CLOSEST]: (a, b) => walkingKm(a) - walkingKm(b) || byTripId(a, b),
+};
+
+/**
+ * Trips that pass near the passenger's pickup and drop points, filtered, sorted and paged.
+ * viewerId: the signed-in user; their own trips are left out (booking them returns OWN_TRIP).
+ */
+async function searchTrips(query, viewerId = null) {
   const from = { lat: query.fromLat, lng: query.fromLng };
   const to = { lat: query.toLat, lng: query.toLng };
   const { radiusKm } = query;
@@ -265,6 +309,9 @@ async function searchTrips(query) {
     toBox: boundingBox(to, radiusKm),
     ...dayRange(query.date),
     pricingMode: query.pricingMode ?? null,
+    excludeDriverId: viewerId,
+    allowsCargo: query.allowsCargo === true,
+    minCargoKg: query.minCargoKg ?? null,
   });
 
   // Keep the closest pickup/drop pair for each trip.
@@ -284,13 +331,16 @@ async function searchTrips(query) {
   for (const c of best.values()) {
     const seatsAvailable = availableSeats(c.seats_offered, legsByTrip.get(c.trip_id) || [], c.from_order, c.to_order);
     if (seatsAvailable < query.seats) continue;
-    results.push({
+    const result = {
       tripId: c.trip_id,
       driverId: c.driver_user_id,
       vehicleId: c.vehicle_id,
       pricingMode: c.pricing_mode,
       departureAt: c.departure_at,
+      estimatedArrivalAt: c.estimated_arrival_at,
       allowsCargo: c.allows_cargo,
+      // No cargo bookings exist yet, so the free cargo space is the whole capacity.
+      cargoCapacityKg: c.allows_cargo ? numberOrNull(c.cargo_capacity_kg) : null,
       pickup: {
         stopOrder: c.from_order,
         name: c.from_name,
@@ -308,18 +358,16 @@ async function searchTrips(query) {
         distanceFromYourDestinationKm: round1(c.dropKm),
       },
       segmentDistanceKm: km(c.to_m - c.from_m),
+      seatsOffered: c.seats_offered,
       seatsAvailable,
       // FIXED: the seat price for this segment. AUCTION: the suggested starting bid.
       segmentPriceCents: segmentPriceCents(c.base_price_cents, c.distance_m, c.from_m, c.to_m),
-    });
+    };
+    if (passesFilters(result, query)) results.push(result);
   }
 
-  results.sort(
-    (a, b) =>
-      new Date(a.departureAt) - new Date(b.departureAt) ||
-      a.pickup.distanceFromYouKm + a.drop.distanceFromYourDestinationKm -
-        (b.pickup.distanceFromYouKm + b.drop.distanceFromYourDestinationKm),
-  );
+  // Filter and sort every match first, then cut the page, so totals and pages agree.
+  results.sort(SORTERS[query.sort ?? SEARCH_SORT.EARLIEST]);
   const start = (query.page - 1) * query.limit;
   return { results: results.slice(start, start + query.limit), total: results.length };
 }
@@ -336,6 +384,7 @@ async function getSegmentAvailability(id, fromStop, toStop) {
     tripId: id,
     fromStop,
     toStop,
+    seatsOffered: trip.seats_offered,
     seatsAvailable: availableSeats(trip.seats_offered, legSeats, fromStop, toStop),
     segmentPriceCents: segmentPriceCents(
       trip.base_price_cents,
@@ -343,22 +392,33 @@ async function getSegmentAvailability(id, fromStop, toStop) {
       stops[fromStop].distance_from_start_m,
       stops[toStop].distance_from_start_m,
     ),
+    allowsCargo: trip.allows_cargo,
+    // No cargo bookings exist yet, so the free cargo space is the whole capacity.
+    cargoCapacityKg: trip.allows_cargo ? numberOrNull(trip.cargo_capacity_kg) : null,
+    // Free seats on each leg of the passenger's part of the route.
+    legs: legsFor(fromStop, toStop).map((legIndex) => ({
+      legIndex,
+      fromName: stops[legIndex].name,
+      toName: stops[legIndex + 1].name,
+      seatsAvailable: Math.max(0, trip.seats_offered - (legSeats[legIndex] || 0)),
+    })),
   };
 }
 
 // ---------- seat holds: for the Booking and Auction modules ----------
 
-/**
- * Holds seats on the legs between two stops. Call it with the transaction your module uses to
- * save the booking, so both are saved together or not at all:
- *   await db.transaction(async (tx) => { await reserveSeats(tx, tripId, 1, 3, 2); ... });
- */
-async function reserveSeats(tx, tripId, fromStop, toStop, seats) {
-  const trip = await repo.lock(tripId, tx);
-  if (!trip) throw tripNotFound();
-  if (trip.status !== TRIP_STATUS.SCHEDULED) {
-    throw new ApiError(409, 'TRIP_NOT_BOOKABLE', 'Seats can only be reserved on a published trip');
+/** A seat count must be a whole number of at least 1. A negative one would move seats the wrong way. */
+function checkSeats(seats) {
+  if (!Number.isInteger(seats) || seats < 1) {
+    throw new ApiError(422, 'INVALID_SEATS', 'The number of seats must be a whole number of at least 1');
   }
+}
+
+/**
+ * Locks the legs of a segment for a seat change. 422 INVALID_SEGMENT when the drop is not after the
+ * pickup or a stop is not on the trip. Nothing is changed when it throws.
+ */
+async function lockSegment(tx, tripId, fromStop, toStop) {
   let legs;
   try {
     legs = legsFor(fromStop, toStop);
@@ -367,6 +427,25 @@ async function reserveSeats(tx, tripId, fromStop, toStop, seats) {
   }
   const locked = await repo.lockLegs(tripId, fromStop, toStop, tx);
   if (locked.length !== legs.length) throw new ApiError(422, 'INVALID_SEGMENT', 'The stops are not on this trip');
+  return locked;
+}
+
+/**
+ * Holds seats on the legs between two stops. Call it with the transaction your module uses to
+ * save the booking, so both are saved together or not at all:
+ *   await db.transaction(async (tx) => { await reserveSeats(tx, tripId, 1, 3, 2); ... });
+ */
+async function reserveSeats(tx, tripId, fromStop, toStop, seats) {
+  checkSeats(seats);
+  const trip = await repo.lock(tripId, tx);
+  if (!trip) throw tripNotFound();
+  if (trip.status !== TRIP_STATUS.SCHEDULED) {
+    throw new ApiError(409, 'TRIP_NOT_BOOKABLE', 'Seats can only be reserved on a published trip');
+  }
+  if (new Date(trip.departure_at) <= new Date()) {
+    throw new ApiError(409, 'TRIP_DEPARTED', 'This trip has already left');
+  }
+  const locked = await lockSegment(tx, tripId, fromStop, toStop);
   const busiest = Math.max(...locked.map((leg) => leg.seats_reserved));
   if (busiest + seats > trip.seats_offered) {
     throw new ApiError(409, 'NOT_ENOUGH_SEATS', 'Not enough seats on this part of the route', {
@@ -378,11 +457,16 @@ async function reserveSeats(tx, tripId, fromStop, toStop, seats) {
   return { tripId, fromStop, toStop, seats };
 }
 
-/** Gives seats back (cancelled booking, refund, unpaid auction win). Use inside a transaction. */
+/**
+ * Gives seats back (cancelled booking, refund, unpaid auction win). Use inside a transaction.
+ * Checks the seats and the segment like reserveSeats does; no leg changes when it throws.
+ */
 async function releaseSeats(tx, tripId, fromStop, toStop, seats) {
-  await repo.lock(tripId, tx);
-  const locked = await repo.lockLegs(tripId, fromStop, toStop, tx);
-  if (locked.length === 0 || locked.some((leg) => leg.seats_reserved < seats)) {
+  checkSeats(seats);
+  const trip = await repo.lock(tripId, tx);
+  if (!trip) throw tripNotFound();
+  const locked = await lockSegment(tx, tripId, fromStop, toStop);
+  if (locked.some((leg) => leg.seats_reserved < seats)) {
     throw new ApiError(409, 'RELEASE_MISMATCH', 'Cannot release more seats than are reserved');
   }
   await repo.addToLegs(tripId, fromStop, toStop, -seats, tx);

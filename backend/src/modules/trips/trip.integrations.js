@@ -59,7 +59,25 @@ async function assertVehicleUsable(driverUserId, vehicleId, seatsOffered, client
   }
 }
 
+/**
+ * Member 3 (vehicles): a trip cannot offer more cargo space than its vehicle has
+ * (vehicles.cargo_capacity_kg, 0 when the vehicle carries no cargo). Call it inside the caller's
+ * transaction, and only when the trip takes cargo.
+ */
+async function assertCargoWithinVehicle(vehicleId, cargoCapacityKg, client = db) {
+  const { rows } = await client.query('SELECT cargo_capacity_kg FROM vehicles WHERE id = $1', [vehicleId]);
+  const limitKg = Number(rows[0]?.cargo_capacity_kg ?? 0);
+  if (Number(cargoCapacityKg) > limitKg) {
+    throw new ApiError(
+      422,
+      'CARGO_OVER_VEHICLE_LIMIT',
+      limitKg > 0 ? `This vehicle can carry at most ${limitKg} kg of cargo` : 'This vehicle has no cargo space',
+      { maxCargoKg: limitKg },
+    );
+  }
+}
+
 /** Notifications (sprint 4) will tell passengers with seats. No-op for now. */
 async function onTripCancelled() {}
 
-module.exports = { assertDriverEligible, assertVehicleUsable, onTripCancelled };
+module.exports = { assertDriverEligible, assertVehicleUsable, assertCargoWithinVehicle, onTripCancelled };

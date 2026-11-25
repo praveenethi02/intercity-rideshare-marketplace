@@ -39,9 +39,27 @@ their code in `meta.code`. Money is LKR cents.
 **GET `/trips/search`**: `fromLat`, `fromLng`, `toLat`, `toLng`, `date` (`YYYY-MM-DD`, Sri Lankan
 day), optional `seats` (default 1), `radiusKm` (default 5), `pricingMode`, `page`, `limit`.
 It finds published trips that have a stop near the pickup point and a *later* stop near the drop
-point, with enough free seats on that part of the route.
+point, with enough free seats on that part of the route. The signed-in user's own trips are left
+out, because booking them returns 403 `OWN_TRIP`.
 
-**GET `/trips/:id/availability`**: `fromStop` and `toStop` (stop order numbers).
+Optional filters and sorting (SCRUM-69). They are applied before paging, so `meta.total` counts the
+filtered matches and every page uses the same order:
+
+| Param | Meaning |
+| --- | --- |
+| `maxPriceCents` | Integer ≥ 0. Keeps results whose `segmentPriceCents` (the seat price for the passenger's part) is at most this. |
+| `departAfter`, `departBefore` | `HH:mm`, Sri Lankan time, both inclusive, compared with the pickup time (`pickup.plannedAt`, or `departureAt` when it is null). `departAfter` must be before `departBefore`, else 422. |
+| `allowsCargo` | Only `true` is accepted: trips that take cargo. |
+| `minCargoKg` | Number > 0: cargo trips with at least this `cargoCapacityKg`. |
+| `sort` | `earliest` (pickup time, default), `cheapest` (`segmentPriceCents`) or `closest` (walking distance to the pickup plus from the drop). Ties are broken by `tripId`. |
+
+Each result also has `seatsOffered`, `estimatedArrivalAt` (end of the whole trip, or null) and
+`cargoCapacityKg` (a number, or null when the trip takes no cargo).
+
+**GET `/trips/:id/availability`**: `fromStop` and `toStop` (stop order numbers). Returns
+`seatsAvailable` and `segmentPriceCents` for the segment, plus `seatsOffered`, `allowsCargo`,
+`cargoCapacityKg` and `legs`: one `{ legIndex, fromName, toName, seatsAvailable }` per leg from
+`fromStop` to `toStop`. There are no cargo bookings yet, so the free cargo space is the capacity.
 
 **POST `/trips/:id/cancel`**: `{ reason }` (3–300 characters).
 
@@ -65,6 +83,9 @@ point, with enough free seats on that part of the route.
   `getUsableVehicle` in the vehicles module. `seatsOffered` can be at most the vehicle's
   `passengerSeats` (422 `TOO_MANY_SEATS`). `passengerSeats` already leaves out the driver's seat.
   The seat limit is checked again when `seatsOffered` is edited.
+- A trip that takes cargo cannot offer more than the vehicle's `cargo_capacity_kg` (422
+  `CARGO_OVER_VEHICLE_LIMIT`, with `maxCargoKg` in `meta.details`). It is checked on create and
+  when `allowsCargo` or `cargoCapacityKg` changes, not when cargo is off.
 
 ## Seats per route segment (for the Booking and Auction modules)
 
@@ -86,6 +107,20 @@ await db.transaction(async (tx) => {
 // Cancelled booking, refund or unpaid auction win:
 await db.transaction((tx) => releaseSeats(tx, tripId, pickupStop, dropStop, seats));
 ```
+
+Both check their input before changing anything (SCRUM-77, SCRUM-81):
+
+| Case | `reserveSeats` | `releaseSeats` |
+| --- | --- | --- |
+| `seats` is not a whole number ≥ 1 | 422 `INVALID_SEATS` | 422 `INVALID_SEATS` |
+| Drop not after pickup, or a stop not on the trip | 422 `INVALID_SEGMENT` | 422 `INVALID_SEGMENT` |
+| Trip does not exist | 404 `TRIP_NOT_FOUND` | 404 `TRIP_NOT_FOUND` |
+| Trip is not `SCHEDULED` | 409 `TRIP_NOT_BOOKABLE` | allowed |
+| Departure time has passed | 409 `TRIP_DEPARTED` | allowed |
+| Not enough free seats / more than reserved | 409 `NOT_ENOUGH_SEATS` | 409 `RELEASE_MISMATCH` |
+
+They lock the trip and the legs, so two bookings for the last seat cannot both win. If anything later
+in your transaction fails, the seat change is rolled back with it.
 
 ## Database
 

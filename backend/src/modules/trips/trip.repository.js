@@ -154,11 +154,26 @@ async function listForDriver(driverUserId, { status = null, page, limit }, clien
 /**
  * Scheduled (trip, pickup stop, drop stop) pairs where the pickup is inside fromBox, the drop
  * is inside toBox and comes later on the route. The service then checks exact distances.
+ * excludeDriverId leaves out the searching user's own trips. allowsCargo and minCargoKg keep
+ * only trips that take parcels (minCargoKg: with at least that capacity).
  */
-async function searchCandidates({ fromBox, toBox, dayStart, dayEnd, pricingMode = null }, client = db) {
+async function searchCandidates(
+  {
+    fromBox,
+    toBox,
+    dayStart,
+    dayEnd,
+    pricingMode = null,
+    excludeDriverId = null,
+    allowsCargo = false,
+    minCargoKg = null,
+  },
+  client = db,
+) {
   const { rows } = await client.query(
     `SELECT t.id AS trip_id, t.driver_user_id, t.vehicle_id, t.pricing_mode, t.departure_at,
-            t.seats_offered, t.base_price_cents, t.distance_m, t.allows_cargo,
+            t.estimated_arrival_at, t.seats_offered, t.base_price_cents, t.distance_m, t.allows_cargo,
+            t.cargo_capacity_kg,
             o.stop_order AS from_order, o.name AS from_name, o.lat AS from_lat, o.lng AS from_lng,
             o.distance_from_start_m AS from_m, o.planned_at AS from_at,
             d.stop_order AS to_order, d.name AS to_name, d.lat AS to_lat, d.lng AS to_lng,
@@ -171,7 +186,10 @@ async function searchCandidates({ fromBox, toBox, dayStart, dayEnd, pricingMode 
        AND t.departure_at > now()
        AND o.lat BETWEEN $3 AND $4 AND o.lng BETWEEN $5 AND $6
        AND d.lat BETWEEN $7 AND $8 AND d.lng BETWEEN $9 AND $10
-       AND ($11::text IS NULL OR t.pricing_mode = $11::text)`,
+       AND ($11::text IS NULL OR t.pricing_mode = $11::text)
+       AND ($12::uuid IS NULL OR t.driver_user_id <> $12::uuid)
+       AND (NOT $13::boolean OR t.allows_cargo)
+       AND ($14::numeric IS NULL OR (t.allows_cargo AND t.cargo_capacity_kg >= $14::numeric))`,
     [
       dayStart,
       dayEnd,
@@ -184,6 +202,9 @@ async function searchCandidates({ fromBox, toBox, dayStart, dayEnd, pricingMode 
       toBox.minLng,
       toBox.maxLng,
       pricingMode,
+      excludeDriverId,
+      allowsCargo,
+      minCargoKg,
     ],
   );
   return rows;
