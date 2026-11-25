@@ -41,7 +41,7 @@ router.post('/', driverOnly, validate({ body: schemas.createTrip }), async (req,
 });
 
 router.get('/:id', validate(byId), async (req, res) => {
-  const trip = await tripService.getTrip(req.validated.params.id, req.user);
+  const trip = await tripService.getTripDetail(req.validated.params.id, req.user);
   return respond(res, { message: 'Trip loaded', data: { trip } });
 });
 

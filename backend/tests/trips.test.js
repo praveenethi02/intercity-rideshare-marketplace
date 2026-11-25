@@ -211,6 +211,74 @@ describe('GET and PATCH /trips/:id', () => {
   });
 });
 
+describe('vehicle on the trip detail (SCRUM-70)', () => {
+  const VEHICLE = { type: 'CAR', make: 'Toyota', model: 'Axio', year: 2016, color: 'White' };
+
+  test('the driver, a passenger and any other driver see the vehicle, without the plate', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token);
+    const passenger = await signedInPassenger();
+    const otherDriver = await signedInDriver();
+
+    for (const token of [driver.token, passenger.token, otherDriver.token]) {
+      const res = await get(`/trips/${trip.id}`, token);
+      expect(res.status).toBe(200);
+      // toEqual: exactly these fields, so no plate, document or verification data.
+      expect(res.body.data.trip.vehicle).toEqual(VEHICLE);
+      expect(res.text).not.toMatch(/plate|WP CAB-|verification|document/i);
+    }
+  });
+
+  test('keeps the existing fields and shows no private driver details', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token);
+    const passenger = await signedInPassenger();
+
+    const res = await get(`/trips/${trip.id}`, passenger.token);
+
+    expect(res.body.data.trip).toMatchObject({ ...trip, vehicle: VEHICLE });
+    expect(res.text).not.toContain(driver.user.phone);
+    expect(res.text).not.toContain(driver.user.fullName);
+    expect(res.text).not.toMatch(/phone|email|nic|licen[cs]e|address/i);
+  });
+
+  test('is null when the vehicle row is missing', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token);
+    await db.query('UPDATE trips SET vehicle_id = $2 WHERE id = $1', [trip.id, crypto.randomUUID()]);
+
+    const res = await get(`/trips/${trip.id}`, driver.token);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.trip.vehicle).toBeNull();
+  });
+
+  test('a draft with its vehicle is still visible only to its owner', async () => {
+    const driver = await signedInDriver();
+    const draft = await createTrip(driver.token);
+    const passenger = await signedInPassenger();
+
+    expect((await get(`/trips/${draft.id}`, driver.token)).body.data.trip.vehicle).toEqual(VEHICLE);
+    const res = await get(`/trips/${draft.id}`, passenger.token);
+    expect(res.status).toBe(404);
+    expect(res.body.meta.code).toBe('TRIP_NOT_FOUND');
+  });
+
+  test('is not added to lists, search or the other trip responses', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token);
+    const passenger = await signedInPassenger();
+
+    expect(trip).not.toHaveProperty('vehicle');
+    const mine = await get('/trips/mine', driver.token);
+    expect(mine.body.data.trips[0]).not.toHaveProperty('vehicle');
+    const query = `fromLat=6.9344&fromLng=79.8428&toLat=7.2906&toLng=80.6337&date=${colomboDate(trip.departureAt)}`;
+    const search = await get(`/trips/search?${query}`, passenger.token);
+    expect(search.body.data.results).toHaveLength(1);
+    expect(search.body.data.results[0]).not.toHaveProperty('vehicle');
+  });
+});
+
 describe('trip lifecycle', () => {
   test('publish, then cancel with a reason', async () => {
     const { token } = await signedInDriver();
