@@ -12,6 +12,8 @@ const MINUTE = 60_000;
 const DAY = 86_400_000;
 const km = (metres) => Math.round(metres / 100) / 10; // 1 decimal
 const round1 = (x) => Math.round(x * 10) / 10;
+/** pg returns NUMERIC columns as strings. The API always sends a number or null. */
+const numberOrNull = (value) => (value === null || value === undefined ? null : Number(value));
 
 const tripNotFound = () => new ApiError(404, 'TRIP_NOT_FOUND', 'Trip not found');
 
@@ -45,7 +47,7 @@ function toTrip(row, stops, legSeats) {
     basePriceCents: row.base_price_cents,
     distanceKm: km(row.distance_m),
     allowsCargo: row.allows_cargo,
-    cargoCapacityKg: row.cargo_capacity_kg,
+    cargoCapacityKg: numberOrNull(row.cargo_capacity_kg),
     notes: row.notes,
     cancelReason: row.cancel_reason,
     publishedAt: row.published_at,
@@ -146,6 +148,7 @@ async function createTrip(driver, input) {
   const tripId = await db.transaction(async (tx) => {
     await integrations.assertDriverEligible(driver.id, tx);
     await integrations.assertVehicleUsable(driver.id, input.vehicleId, input.seatsOffered, tx);
+    if (input.allowsCargo) await integrations.assertCargoWithinVehicle(input.vehicleId, input.cargoCapacityKg, tx);
     const row = await repo.insertTrip({ ...input, ...routeFields(stops), driverUserId: driver.id }, tx);
     await repo.replaceStops(row.id, stops, tx);
     return row.id;
@@ -184,6 +187,10 @@ async function updateTrip(user, id, changes) {
     const cargoCapacityKg = changes.cargoCapacityKg ?? trip.cargo_capacity_kg;
     if (allowsCargo && !cargoCapacityKg) {
       throw new ApiError(422, 'CARGO_CAPACITY_REQUIRED', 'cargoCapacityKg is required when allowsCargo is true');
+    }
+    const cargoChanged = changes.allowsCargo !== undefined || changes.cargoCapacityKg !== undefined;
+    if (allowsCargo && cargoChanged) {
+      await integrations.assertCargoWithinVehicle(trip.vehicle_id, cargoCapacityKg, tx);
     }
 
     const { stops: newStops, ...fields } = changes;
@@ -330,7 +337,10 @@ async function searchTrips(query, viewerId = null) {
       vehicleId: c.vehicle_id,
       pricingMode: c.pricing_mode,
       departureAt: c.departure_at,
+      estimatedArrivalAt: c.estimated_arrival_at,
       allowsCargo: c.allows_cargo,
+      // No cargo bookings exist yet, so the free cargo space is the whole capacity.
+      cargoCapacityKg: c.allows_cargo ? numberOrNull(c.cargo_capacity_kg) : null,
       pickup: {
         stopOrder: c.from_order,
         name: c.from_name,
@@ -348,6 +358,7 @@ async function searchTrips(query, viewerId = null) {
         distanceFromYourDestinationKm: round1(c.dropKm),
       },
       segmentDistanceKm: km(c.to_m - c.from_m),
+      seatsOffered: c.seats_offered,
       seatsAvailable,
       // FIXED: the seat price for this segment. AUCTION: the suggested starting bid.
       segmentPriceCents: segmentPriceCents(c.base_price_cents, c.distance_m, c.from_m, c.to_m),
@@ -373,6 +384,7 @@ async function getSegmentAvailability(id, fromStop, toStop) {
     tripId: id,
     fromStop,
     toStop,
+    seatsOffered: trip.seats_offered,
     seatsAvailable: availableSeats(trip.seats_offered, legSeats, fromStop, toStop),
     segmentPriceCents: segmentPriceCents(
       trip.base_price_cents,
@@ -380,6 +392,16 @@ async function getSegmentAvailability(id, fromStop, toStop) {
       stops[fromStop].distance_from_start_m,
       stops[toStop].distance_from_start_m,
     ),
+    allowsCargo: trip.allows_cargo,
+    // No cargo bookings exist yet, so the free cargo space is the whole capacity.
+    cargoCapacityKg: trip.allows_cargo ? numberOrNull(trip.cargo_capacity_kg) : null,
+    // Free seats on each leg of the passenger's part of the route.
+    legs: legsFor(fromStop, toStop).map((legIndex) => ({
+      legIndex,
+      fromName: stops[legIndex].name,
+      toName: stops[legIndex + 1].name,
+      seatsAvailable: Math.max(0, trip.seats_offered - (legSeats[legIndex] || 0)),
+    })),
   };
 }
 

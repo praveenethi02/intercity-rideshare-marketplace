@@ -329,6 +329,129 @@ describe('search and seats per segment', () => {
   });
 });
 
+describe('seat and cargo capacity (SCRUM-71, SCRUM-74)', () => {
+  const kadawathaToKegalle = (token, departureAt) =>
+    get(
+      `/trips/search?fromLat=7.0&fromLng=79.95&toLat=7.25&toLng=80.35&date=${colomboDate(departureAt)}`,
+      token,
+    );
+
+  async function cargoDriver(vehicleCargoKg = 500) {
+    const driver = await signedInDriver();
+    const vehicleId = await addVehicle(driver.user.id, { cargoCapacityKg: vehicleCargoKg });
+    return { ...driver, vehicleId };
+  }
+
+  test('search results show seats offered, arrival and cargo capacity as a number', async () => {
+    const driver = await cargoDriver();
+    const departureAt = inHours(26);
+    const cargo = await publishedTrip(driver.token, {
+      vehicleId: driver.vehicleId,
+      departureAt,
+      estimatedArrivalAt: inHours(30),
+      allowsCargo: true,
+      cargoCapacityKg: 120.5,
+    });
+    const plain = await publishedTrip(driver.token, { departureAt: inHours(27) });
+    const passenger = await signedInPassenger();
+
+    const res = await kadawathaToKegalle(passenger.token, departureAt);
+    const byId = Object.fromEntries(res.body.data.results.map((r) => [r.tripId, r]));
+
+    expect(byId[cargo.id]).toMatchObject({
+      seatsOffered: 3,
+      seatsAvailable: 3,
+      allowsCargo: true,
+      cargoCapacityKg: 120.5,
+    });
+    expect(new Date(byId[cargo.id].estimatedArrivalAt).toISOString()).toBe(cargo.estimatedArrivalAt);
+    expect(byId[plain.id]).toMatchObject({
+      seatsOffered: 3,
+      allowsCargo: false,
+      cargoCapacityKg: null,
+      estimatedArrivalAt: null,
+    });
+    expect((await get(`/trips/${cargo.id}`, passenger.token)).body.data.trip.cargoCapacityKg).toBe(120.5);
+  });
+
+  test('availability lists seats offered, cargo and free seats on each leg of the part', async () => {
+    const driver = await cargoDriver();
+    const trip = await publishedTrip(driver.token, {
+      vehicleId: driver.vehicleId,
+      allowsCargo: true,
+      cargoCapacityKg: 80,
+    });
+    const passenger = await signedInPassenger();
+    await db.transaction((tx) => reserveSeats(tx, trip.id, 1, 2, 2)); // Kadawatha -> Kegalle
+
+    const res = await get(`/trips/${trip.id}/availability?fromStop=0&toStop=3`, passenger.token);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.availability).toMatchObject({
+      seatsOffered: 3,
+      seatsAvailable: 1,
+      allowsCargo: true,
+      cargoCapacityKg: 80,
+      legs: [
+        { legIndex: 0, fromName: 'Colombo Fort', toName: 'Kadawatha', seatsAvailable: 3 },
+        { legIndex: 1, fromName: 'Kadawatha', toName: 'Kegalle', seatsAvailable: 1 },
+        { legIndex: 2, fromName: 'Kegalle', toName: 'Kandy', seatsAvailable: 3 },
+      ],
+    });
+    const part = await get(`/trips/${trip.id}/availability?fromStop=2&toStop=3`, passenger.token);
+    expect(part.body.data.availability.legs).toEqual([
+      { legIndex: 2, fromName: 'Kegalle', toName: 'Kandy', seatsAvailable: 3 },
+    ]);
+  });
+
+  test('a trip cannot offer more cargo than its vehicle carries', async () => {
+    const driver = await cargoDriver(100);
+
+    const cargoTrip = (cargoCapacityKg) =>
+      createTripRequest(driver.token, { vehicleId: driver.vehicleId, allowsCargo: true, cargoCapacityKg });
+
+    const over = await cargoTrip(100.5);
+    expect(over.status).toBe(422);
+    expect(over.body.meta.code).toBe('CARGO_OVER_VEHICLE_LIMIT');
+
+    const full = await cargoTrip(100);
+    expect(full.status).toBe(201);
+    expect(full.body.data.trip.cargoCapacityKg).toBe(100);
+  });
+
+  test('a vehicle without cargo space can only offer trips without cargo', async () => {
+    const driver = await signedInDriver(); // default car: 0 kg
+
+    const res = await createTripRequest(driver.token, { allowsCargo: true, cargoCapacityKg: 10 });
+    expect(res.status).toBe(422);
+    expect(res.body.meta.code).toBe('CARGO_OVER_VEHICLE_LIMIT');
+    expect((await createTripRequest(driver.token, { allowsCargo: false })).status).toBe(201);
+  });
+
+  test('checks the cargo limit again when the cargo fields change', async () => {
+    const driver = await cargoDriver(100);
+    const trip = await createTrip(driver.token, { vehicleId: driver.vehicleId }); // a draft, no cargo
+
+    const over = await patch(`/trips/${trip.id}`, driver.token, { allowsCargo: true, cargoCapacityKg: 150 });
+    expect(over.status).toBe(422);
+    expect(over.body.meta.code).toBe('CARGO_OVER_VEHICLE_LIMIT');
+
+    const ok = await patch(`/trips/${trip.id}`, driver.token, { allowsCargo: true, cargoCapacityKg: 60 });
+    expect(ok.status).toBe(200);
+    expect(ok.body.data.trip).toMatchObject({ allowsCargo: true, cargoCapacityKg: 60 });
+    expect((await patch(`/trips/${trip.id}`, driver.token, { cargoCapacityKg: 101 })).body.meta.code).toBe(
+      'CARGO_OVER_VEHICLE_LIMIT',
+    );
+
+    // Other edits do not re-check cargo, and turning cargo off is always allowed.
+    await db.query('UPDATE vehicles SET cargo_capacity_kg = 0 WHERE id = $1', [driver.vehicleId]);
+    expect((await patch(`/trips/${trip.id}`, driver.token, { notes: 'AC van' })).status).toBe(200);
+    const off = await patch(`/trips/${trip.id}`, driver.token, { allowsCargo: false });
+    expect(off.status).toBe(200);
+    expect(off.body.data.trip).toMatchObject({ allowsCargo: false, cargoCapacityKg: null });
+  });
+});
+
 describe('route-segment matching (SCRUM-72)', () => {
   // Colombo Fort (0) -> Kadawatha (1) -> Kegalle (2) -> Kandy (3)
   const NEAR = {
@@ -599,7 +722,11 @@ describe('search filters and sorting (SCRUM-67, SCRUM-69)', () => {
     const late = await publishedTrip(driver.token, { departureAt: at('20:00'), basePriceCents: 100000 });
     // Starts 3 km from the passenger instead of at the Fort.
     const farStops = [{ name: 'Maradana', lat: 6.9289, lng: 79.8656 }, ...STOPS.slice(1)];
-    const far = await publishedTrip(driver.token, { departureAt: at('12:00'), basePriceCents: 200000, stops: farStops });
+    const far = await publishedTrip(driver.token, {
+      departureAt: at('12:00'),
+      basePriceCents: 200000,
+      stops: farStops,
+    });
     const passenger = await signedInPassenger();
 
     expect(tripIds(await search(passenger.token))).toEqual([early.id, far.id, late.id]); // earliest is the default
