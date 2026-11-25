@@ -76,12 +76,12 @@ paths:
     get:
       tags: [Bookings]
       operationId: getBooking
-      summary: One booking
+      summary: One booking with its journey details
       description: Only its passenger, the trip's driver or an admin. Others get 404 BOOKING_NOT_FOUND.
       parameters:
         - $ref: '#/components/parameters/BookingId'
       responses:
-        '200': { $ref: '#/components/responses/BookingResponse' }
+        '200': { $ref: '#/components/responses/BookingDetailResponse' }
         '401': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '422': { $ref: '#/components/responses/Error' }
@@ -128,6 +128,16 @@ components:
               - type: object
                 properties:
                   data: { type: object, properties: { booking: { $ref: '#/components/schemas/Booking' } } }
+    BookingDetailResponse:
+      description: Booking with its journey details
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data: { type: object, properties: { booking: { $ref: '#/components/schemas/BookingDetail' } } }
     Error:
       description: Error (success = false)
       content:
@@ -188,6 +198,41 @@ components:
         stopOrder: { type: integer }
         name: { type: string, example: Kadawatha }
         plannedAt: { type: string, format: date-time, nullable: true }
+
+    BookingVehicle:
+      type: object
+      properties:
+        type: { type: string, enum: [CAR, THREE_WHEELER, MOTORBIKE, SUV, VAN, MINIBUS, BUS, PICKUP, LORRY] }
+        make: { type: string, example: Toyota }
+        model: { type: string, example: Axio }
+        year: { type: integer, example: 2016 }
+        color: { type: string, example: White }
+        plateNumber:
+          type: string
+          nullable: true
+          example: WP CAB-1234
+          description: null for the passenger when the booking or the trip is CANCELLED
+
+    BookingDetail:
+      allOf:
+        - $ref: '#/components/schemas/Booking'
+        - type: object
+          properties:
+            trip:
+              type: object
+              properties:
+                vehicle:
+                  nullable: true
+                  description: null if the vehicle row is missing
+                  allOf:
+                    - $ref: '#/components/schemas/BookingVehicle'
+                stops:
+                  type: array
+                  description: From fromStop to toStop only, in driving order
+                  items: { $ref: '#/components/schemas/BookingStop' }
+                startedAt: { type: string, format: date-time, nullable: true }
+                completedAt: { type: string, format: date-time, nullable: true }
+                cancelReason: { type: string, nullable: true, description: Why the driver cancelled the trip }
 
     Booking:
       type: object

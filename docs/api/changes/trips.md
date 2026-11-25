@@ -12,7 +12,7 @@ their code in `meta.code`. Money is LKR cents.
 | POST | `/trips` | Driver | `trip` (201, status `DRAFT`) |
 | GET | `/trips/mine` | Driver | `trips`, with paging in `meta` |
 | GET | `/trips/search` | Bearer | `results`, with paging and `radiusKm` in `meta` |
-| GET | `/trips/:id` | Bearer (drafts: owner or admin) | `trip` with `stops` and `legs` |
+| GET | `/trips/:id` | Bearer (drafts: owner or admin) | `trip` with `stops`, `legs` and `vehicle` |
 | PATCH | `/trips/:id` | Owner or admin | `trip` |
 | GET | `/trips/:id/availability` | Bearer | `availability` |
 | POST | `/trips/:id/publish` | Owner or admin | `trip` |
@@ -55,6 +55,11 @@ filtered matches and every page uses the same order:
 
 Each result also has `seatsOffered`, `estimatedArrivalAt` (end of the whole trip, or null) and
 `cargoCapacityKg` (a number, or null when the trip takes no cargo).
+
+**GET `/trips/:id`** also returns `vehicle` (SCRUM-70): `{ type, make, model, year, color }`, or `null`
+if the vehicle row is missing. It never has the plate number, document or verification data. Only this
+endpoint has it: the lists, search and the create, edit and status responses do not. The driver's
+public details come from `GET /drivers/:id` (drivers module), using the trip's `driverId`.
 
 **GET `/trips/:id/availability`**: `fromStop` and `toStop` (stop order numbers). Returns
 `seatsAvailable` and `segmentPriceCents` for the segment, plus `seatsOffered`, `allowsCargo`,

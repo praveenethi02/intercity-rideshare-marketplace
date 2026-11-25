@@ -14,7 +14,7 @@ and cancelling bookings when the driver cancels the whole trip come in later ste
 | --- | --- | --- | --- |
 | POST | `/bookings` | Bearer (not the trip's driver) | `booking` (201, status `CONFIRMED`) |
 | GET | `/bookings/mine` | Bearer | `bookings`, with paging in `meta` |
-| GET | `/bookings/:id` | The passenger, the trip's driver or an admin | `booking` |
+| GET | `/bookings/:id` | The passenger, the trip's driver or an admin | `booking` with journey details |
 | POST | `/bookings/:id/cancel` | The passenger | `booking` (status `CANCELLED`) |
 
 Anyone signed in can book, whatever their role: a driver can book a seat on another driver's trip,
@@ -151,6 +151,41 @@ Errors: 422 `VALIDATION_ERROR` for a bad `when`, `page` or `limit`.
 ## GET `/bookings/:id`
 
 Response **200**: `{ "message": "Booking loaded", "data": { "booking": { ... } } }`
+
+The booking object above, with these extra fields in `trip` (SCRUM-83). Only this endpoint has them:
+`POST /bookings`, `GET /bookings/mine` and cancel return the booking object as it is above.
+
+```json
+{
+  "trip": {
+    "...": "the fields above",
+    "vehicle": {
+      "type": "CAR",
+      "make": "Toyota",
+      "model": "Axio",
+      "year": 2016,
+      "color": "White",
+      "plateNumber": "WP CAB-1234"
+    },
+    "stops": [
+      { "stopOrder": 1, "name": "Kadawatha", "plannedAt": null },
+      { "stopOrder": 2, "name": "Kegalle", "plannedAt": null },
+      { "stopOrder": 3, "name": "Kandy", "plannedAt": null }
+    ],
+    "startedAt": null,
+    "completedAt": null,
+    "cancelReason": null
+  }
+}
+```
+
+- `vehicle` is `null` if the vehicle row is missing.
+- `vehicle.plateNumber` is `null` for the passenger when the booking or the trip is `CANCELLED`. The
+  trip's driver and admins always see it.
+- `stops`: the stops from `fromStop` to `toStop` only, in driving order.
+- `trip.cancelReason` is why the driver cancelled the trip. `cancelReason` on the booking is why the
+  passenger cancelled the booking.
+- The driver's public details come from `GET /drivers/:id`, using `trip.driverId`.
 
 | Status | `meta.code` | When |
 | --- | --- | --- |
