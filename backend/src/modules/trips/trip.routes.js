@@ -20,7 +20,8 @@ router.use(apiRateLimit, authenticate);
 // Static paths come before /:id so they are not read as a trip id.
 router.get('/search', validate({ query: schemas.searchQuery }), async (req, res) => {
   const query = req.validated.query;
-  const { results, total } = await tripService.searchTrips(query);
+  // The signed-in user's own trips are left out: they cannot book them (OWN_TRIP).
+  const { results, total } = await tripService.searchTrips(query, req.user.id);
   return respond(res, {
     message: results.length ? 'Trips found' : 'No trips found for this route and date',
     data: { results },

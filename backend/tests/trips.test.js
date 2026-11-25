@@ -46,13 +46,14 @@ let plateCounter = 1000;
 
 /**
  * A vehicle in the vehicles table (migration 301), owned by the driver. By default it is an
- * APPROVED, active car with 5 seats in total, 4 of them for passengers.
+ * APPROVED, active car with 5 seats in total, 4 of them for passengers, and no cargo space.
  */
 async function addVehicle(driverUserId, overrides = {}) {
   const v = {
     vehicleType: 'CAR',
     totalSeats: 5,
     passengerSeats: 4,
+    cargoCapacityKg: 0,
     verificationStatus: 'APPROVED',
     isActive: true,
     ...overrides,
@@ -60,8 +61,8 @@ async function addVehicle(driverUserId, overrides = {}) {
   plateCounter += 1;
   const { rows } = await db.query(
     `INSERT INTO vehicles (driver_user_id, vehicle_type, make, model, year, color, plate_number,
-       total_seats, passenger_seats, verification_status, is_active)
-     VALUES ($1, $2, 'Toyota', 'Axio', 2016, 'White', $3, $4, $5, $6, $7)
+       total_seats, passenger_seats, cargo_capacity_kg, verification_status, is_active)
+     VALUES ($1, $2, 'Toyota', 'Axio', 2016, 'White', $3, $4, $5, $6, $7, $8)
      RETURNING id`,
     [
       driverUserId,
@@ -69,6 +70,7 @@ async function addVehicle(driverUserId, overrides = {}) {
       `WP CAB-${plateCounter}`,
       v.totalSeats,
       v.passengerSeats,
+      v.cargoCapacityKg,
       v.verificationStatus,
       v.isActive,
     ],
@@ -324,6 +326,156 @@ describe('search and seats per segment', () => {
     const res = await get(`/trips/${trip.id}/availability?fromStop=2&toStop=1`, driver.token);
 
     expect(res.status).toBe(422);
+  });
+});
+
+describe('search filters and sorting (SCRUM-67, SCRUM-69)', () => {
+  // A Sri Lankan day two days from now, so every time on it is far enough ahead to publish.
+  const DAY = colomboDate(inHours(48));
+  /** An ISO moment at a Sri Lankan clock time on DAY. */
+  const at = (hhmm, day = DAY) => new Date(`${day}T${hhmm}:00+05:30`).toISOString();
+  const FULL_ROUTE = { fromLat: 6.9344, fromLng: 79.8428, toLat: 7.2906, toLng: 80.6337 };
+
+  /** GET /trips/search from Colombo Fort to Kandy on DAY, with extra query params. */
+  const search = (token, params = {}) =>
+    get(`/trips/search?${new URLSearchParams({ ...FULL_ROUTE, date: DAY, ...params })}`, token);
+  const tripIds = (res) => res.body.data.results.map((r) => r.tripId);
+
+  test("leaves out the signed-in user's own trips", async () => {
+    const me = await signedInDriver();
+    const other = await signedInDriver();
+    const mine = await publishedTrip(me.token, { departureAt: at('08:00') });
+    const theirs = await publishedTrip(other.token, { departureAt: at('09:00') });
+
+    const res = await search(me.token);
+
+    expect(res.status).toBe(200);
+    expect(tripIds(res)).toEqual([theirs.id]);
+    expect(res.body.meta.total).toBe(1);
+    expect(tripIds(await search(other.token))).toEqual([mine.id]);
+  });
+
+  test('maxPriceCents compares the segment seat price, inclusive', async () => {
+    const driver = await signedInDriver();
+    const cheap = await publishedTrip(driver.token, { departureAt: at('08:00'), basePriceCents: 150000 });
+    await publishedTrip(driver.token, { departureAt: at('09:00'), basePriceCents: 250000 });
+    const passenger = await signedInPassenger();
+
+    expect(tripIds(await search(passenger.token, { maxPriceCents: 150000 }))).toEqual([cheap.id]);
+    expect(tripIds(await search(passenger.token, { maxPriceCents: 149999 }))).toEqual([]);
+    expect(await search(passenger.token, { maxPriceCents: 300000 })).toHaveProperty('body.meta.total', 2);
+
+    // Kadawatha -> Kegalle is a part of the route, so its seat price is lower than the full fare.
+    const part = await search(passenger.token, {
+      fromLat: 7.0,
+      fromLng: 79.95,
+      toLat: 7.25,
+      toLng: 80.35,
+      maxPriceCents: 150000,
+    });
+    expect(part.body.data.results).toHaveLength(2);
+    expect(part.body.data.results.every((r) => r.segmentPriceCents <= 150000)).toBe(true);
+  });
+
+  test('departAfter and departBefore use the Sri Lankan pickup time, inclusive', async () => {
+    const driver = await signedInDriver();
+    const six = await publishedTrip(driver.token, { departureAt: at('06:00') });
+    const nine = await publishedTrip(driver.token, { departureAt: at('09:00') });
+    const evening = await publishedTrip(driver.token, { departureAt: at('18:30') });
+    const passenger = await signedInPassenger();
+
+    const morning = await search(passenger.token, { departAfter: '06:00', departBefore: '09:00' });
+    expect(tripIds(morning)).toEqual([six.id, nine.id]);
+    expect(morning.body.meta.total).toBe(2);
+    expect(tripIds(await search(passenger.token, { departAfter: '09:01' }))).toEqual([evening.id]);
+    expect(tripIds(await search(passenger.token, { departBefore: '05:59' }))).toEqual([]);
+  });
+
+  test("uses the pickup stop's planned time, not the trip's departure", async () => {
+    const driver = await signedInDriver();
+    // Leaves Colombo at 05:00 and reaches Kadawatha at 07:30.
+    const stops = [STOPS[0], { ...STOPS[1], plannedAt: at('07:30') }, STOPS[2], STOPS[3]];
+    const trip = await publishedTrip(driver.token, { departureAt: at('05:00'), stops });
+    const passenger = await signedInPassenger();
+    const kadawathaToKegalle = { fromLat: 7.0, fromLng: 79.95, toLat: 7.25, toLng: 80.35 };
+
+    expect(tripIds(await search(passenger.token, { ...kadawathaToKegalle, departAfter: '07:30' }))).toEqual([trip.id]);
+    expect(tripIds(await search(passenger.token, { ...kadawathaToKegalle, departBefore: '07:29' }))).toEqual([]);
+    // From Colombo the pickup time is the departure.
+    expect(tripIds(await search(passenger.token, { departBefore: '05:00' }))).toEqual([trip.id]);
+  });
+
+  test('cargo filters keep trips that take parcels with enough capacity', async () => {
+    const { user, token } = await signedInDriver();
+    const vanId = await addVehicle(user.id, { cargoCapacityKg: 500 });
+    const cargo = await publishedTrip(token, {
+      vehicleId: vanId,
+      departureAt: at('08:00'),
+      allowsCargo: true,
+      cargoCapacityKg: 100,
+    });
+    await publishedTrip(token, { departureAt: at('09:00') });
+    const passenger = await signedInPassenger();
+
+    expect(tripIds(await search(passenger.token, { allowsCargo: 'true' }))).toEqual([cargo.id]);
+    expect(tripIds(await search(passenger.token, { minCargoKg: 100 }))).toEqual([cargo.id]);
+    expect(tripIds(await search(passenger.token, { minCargoKg: 100.5 }))).toEqual([]);
+  });
+
+  test.each([
+    ['departAfter equal to departBefore', { departAfter: '10:00', departBefore: '10:00' }],
+    ['departAfter after departBefore', { departAfter: '18:00', departBefore: '07:00' }],
+    ['a time that does not exist', { departAfter: '24:00' }],
+    ['a time without minutes', { departBefore: '9' }],
+    ['allowsCargo=false', { allowsCargo: 'false' }],
+    ['allowsCargo=1', { allowsCargo: '1' }],
+    ['minCargoKg=0', { minCargoKg: 0 }],
+    ['a negative maxPriceCents', { maxPriceCents: -1 }],
+    ['a fractional maxPriceCents', { maxPriceCents: 10.5 }],
+    ['an unknown sort', { sort: 'random' }],
+    ['an unknown parameter', { colour: 'red' }],
+  ])('rejects %s', async (_name, params) => {
+    const passenger = await signedInPassenger();
+    const res = await search(passenger.token, params);
+    expect(res.status).toBe(422);
+    expect(res.body.meta.code).toBe('VALIDATION_ERROR');
+  });
+
+  test('sorts by pickup time, price or walking distance, ties by trip id', async () => {
+    const driver = await signedInDriver();
+    const early = await publishedTrip(driver.token, { departureAt: at('06:00'), basePriceCents: 300000 });
+    const late = await publishedTrip(driver.token, { departureAt: at('20:00'), basePriceCents: 100000 });
+    // Starts 3 km from the passenger instead of at the Fort.
+    const farStops = [{ name: 'Maradana', lat: 6.9289, lng: 79.8656 }, ...STOPS.slice(1)];
+    const far = await publishedTrip(driver.token, { departureAt: at('12:00'), basePriceCents: 200000, stops: farStops });
+    const passenger = await signedInPassenger();
+
+    expect(tripIds(await search(passenger.token))).toEqual([early.id, far.id, late.id]); // earliest is the default
+    expect(tripIds(await search(passenger.token, { sort: 'earliest' }))).toEqual([early.id, far.id, late.id]);
+    expect(tripIds(await search(passenger.token, { sort: 'cheapest' }))).toEqual([late.id, far.id, early.id]);
+    const closest = tripIds(await search(passenger.token, { sort: 'closest' }));
+    expect(closest.at(-1)).toBe(far.id);
+    expect(closest.slice(0, 2)).toEqual([early.id, late.id].sort()); // same distance: by trip id
+  });
+
+  test('filters and sorts before paging, so pages and totals agree', async () => {
+    const driver = await signedInDriver();
+    const prices = [100000, 400000, 200000, 500000, 300000];
+    for (const [i, basePriceCents] of prices.entries()) {
+      await publishedTrip(driver.token, { departureAt: at(`0${i + 5}:00`), basePriceCents });
+    }
+    const passenger = await signedInPassenger();
+    const params = { sort: 'cheapest', maxPriceCents: 400000, limit: 2 };
+
+    const page1 = await search(passenger.token, params);
+    const page2 = await search(passenger.token, { ...params, page: 2 });
+    const page3 = await search(passenger.token, { ...params, page: 3 });
+
+    expect(page1.body.meta).toMatchObject({ page: 1, limit: 2, total: 4, totalPages: 2 });
+    const pricesInOrder = [...page1.body.data.results, ...page2.body.data.results].map((r) => r.segmentPriceCents);
+    expect(pricesInOrder).toEqual([100000, 200000, 300000, 400000]);
+    expect(page3.body.data.results).toEqual([]);
+    expect(page3.body.meta.total).toBe(4);
   });
 });
 

@@ -8,6 +8,9 @@ const TRIP_STATUS = Object.freeze({
 
 const PRICING_MODE = Object.freeze({ AUCTION: 'AUCTION', FIXED: 'FIXED' });
 
+/** Search result order. earliest = pickup time, closest = walking distance to pickup + from drop. */
+const SEARCH_SORT = Object.freeze({ EARLIEST: 'earliest', CHEAPEST: 'cheapest', CLOSEST: 'closest' });
+
 /** Business rules. The mobile app copies these values in trip_draft.dart. */
 const TRIP_RULES = Object.freeze({
   MIN_LEAD_MINUTES: 30, // create or move a trip at least 30 minutes before departure
@@ -21,4 +24,4 @@ const TRIP_RULES = Object.freeze({
   TIME_ZONE_OFFSET: '+05:30', // search dates are Sri Lankan calendar days
 });
 
-module.exports = { TRIP_STATUS, PRICING_MODE, TRIP_RULES };
+module.exports = { TRIP_STATUS, PRICING_MODE, SEARCH_SORT, TRIP_RULES };

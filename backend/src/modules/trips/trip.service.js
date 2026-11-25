@@ -3,7 +3,7 @@ const ApiError = require('../../utils/ApiError');
 const { ROLES } = require('../users/user.constants');
 const repo = require('./trip.repository');
 const integrations = require('./trip.integrations');
-const { TRIP_STATUS, TRIP_RULES } = require('./trip.constants');
+const { TRIP_STATUS, TRIP_RULES, SEARCH_SORT } = require('./trip.constants');
 const { withDistanceFromStart, haversineKm, boundingBox } = require('./geo');
 const { legsFor, availableSeats, segmentPriceCents } = require('./segments');
 const { canTransition, editableFields } = require('./trip-lifecycle');
@@ -255,7 +255,44 @@ function dayRange(date) {
   return { dayStart: start.toISOString(), dayEnd: new Date(start.getTime() + DAY).toISOString() };
 }
 
-async function searchTrips(query) {
+/** "HH:mm" -> minutes since midnight. */
+const clockMinutes = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+
+// "+05:30" -> 330. Sri Lanka has no daylight saving, so a fixed offset is exact.
+const ZONE_OFFSET_MINUTES =
+  (TRIP_RULES.TIME_ZONE_OFFSET.startsWith('-') ? -1 : 1) * clockMinutes(TRIP_RULES.TIME_ZONE_OFFSET.slice(1));
+
+/** Minutes since midnight, Sri Lankan time, of a moment. */
+function colomboMinutes(moment) {
+  const local = new Date(moment).getTime() + ZONE_OFFSET_MINUTES * MINUTE;
+  return Math.floor((((local % DAY) + DAY) % DAY) / MINUTE);
+}
+
+/** Filters that need the matched segment (price, pickup time). Inclusive at both ends. */
+function passesFilters(result, query) {
+  if (query.maxPriceCents !== undefined && result.segmentPriceCents > query.maxPriceCents) return false;
+  const pickupMinutes = colomboMinutes(result.pickup.plannedAt ?? result.departureAt);
+  if (query.departAfter && pickupMinutes < clockMinutes(query.departAfter)) return false;
+  if (query.departBefore && pickupMinutes > clockMinutes(query.departBefore)) return false;
+  return true;
+}
+
+const pickupTime = (r) => new Date(r.pickup.plannedAt ?? r.departureAt).getTime();
+const walkingKm = (r) => r.pickup.distanceFromYouKm + r.drop.distanceFromYourDestinationKm;
+const byTripId = (a, b) => (a.tripId < b.tripId ? -1 : a.tripId > b.tripId ? 1 : 0);
+
+/** Comparators for ?sort=. Ties are broken by tripId so pages stay stable. */
+const SORTERS = {
+  [SEARCH_SORT.EARLIEST]: (a, b) => pickupTime(a) - pickupTime(b) || byTripId(a, b),
+  [SEARCH_SORT.CHEAPEST]: (a, b) => a.segmentPriceCents - b.segmentPriceCents || byTripId(a, b),
+  [SEARCH_SORT.CLOSEST]: (a, b) => walkingKm(a) - walkingKm(b) || byTripId(a, b),
+};
+
+/**
+ * Trips that pass near the passenger's pickup and drop points, filtered, sorted and paged.
+ * viewerId: the signed-in user; their own trips are left out (booking them returns OWN_TRIP).
+ */
+async function searchTrips(query, viewerId = null) {
   const from = { lat: query.fromLat, lng: query.fromLng };
   const to = { lat: query.toLat, lng: query.toLng };
   const { radiusKm } = query;
@@ -265,6 +302,9 @@ async function searchTrips(query) {
     toBox: boundingBox(to, radiusKm),
     ...dayRange(query.date),
     pricingMode: query.pricingMode ?? null,
+    excludeDriverId: viewerId,
+    allowsCargo: query.allowsCargo === true,
+    minCargoKg: query.minCargoKg ?? null,
   });
 
   // Keep the closest pickup/drop pair for each trip.
@@ -284,7 +324,7 @@ async function searchTrips(query) {
   for (const c of best.values()) {
     const seatsAvailable = availableSeats(c.seats_offered, legsByTrip.get(c.trip_id) || [], c.from_order, c.to_order);
     if (seatsAvailable < query.seats) continue;
-    results.push({
+    const result = {
       tripId: c.trip_id,
       driverId: c.driver_user_id,
       vehicleId: c.vehicle_id,
@@ -311,15 +351,12 @@ async function searchTrips(query) {
       seatsAvailable,
       // FIXED: the seat price for this segment. AUCTION: the suggested starting bid.
       segmentPriceCents: segmentPriceCents(c.base_price_cents, c.distance_m, c.from_m, c.to_m),
-    });
+    };
+    if (passesFilters(result, query)) results.push(result);
   }
 
-  results.sort(
-    (a, b) =>
-      new Date(a.departureAt) - new Date(b.departureAt) ||
-      a.pickup.distanceFromYouKm + a.drop.distanceFromYourDestinationKm -
-        (b.pickup.distanceFromYouKm + b.drop.distanceFromYourDestinationKm),
-  );
+  // Filter and sort every match first, then cut the page, so totals and pages agree.
+  results.sort(SORTERS[query.sort ?? SEARCH_SORT.EARLIEST]);
   const start = (query.page - 1) * query.limit;
   return { results: results.slice(start, start + query.limit), total: results.length };
 }
