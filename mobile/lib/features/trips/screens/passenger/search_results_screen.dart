@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/app_services.dart';
 import '../../../../core/formatters.dart';
+import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/common_widgets.dart';
 import '../../models/search.dart';
-import '../../models/trip.dart';
-import '../../widgets/trip_widgets.dart';
+import '../../widgets/search_result_card.dart';
 import 'passenger_trip_detail_screen.dart';
 
-enum _Sort { earliest, cheapest, closest }
-
-/// List of trips that pass near the passenger's pickup and drop points.
+/// Trips that pass near the passenger's pickup and drop points (SCRUM-67, SCRUM-69).
+/// Sorting and filters are done by the server, so they cover every page; the next page
+/// loads when the user reaches the end of the list.
 class SearchResultsScreen extends StatefulWidget {
   final SearchQuery query;
   const SearchResultsScreen({super.key, required this.query});
@@ -20,173 +20,398 @@ class SearchResultsScreen extends StatefulWidget {
 }
 
 class _SearchResultsScreenState extends State<SearchResultsScreen> {
-  late Future<SearchPage> _future;
-  _Sort _sort = _Sort.earliest;
-  bool _cargoOnly = false;
+  late SearchQuery _query = widget.query;
+
+  final List<TripSearchResult> _items = [];
+  int _total = 0;
+  int _page = 0; // last page loaded
+  double _radiusKm = 5;
+
+  bool _loading = true; // first page
+  bool _loadingMore = false;
+  Object? _error; // first page failed
+  Object? _pageError; // a later page failed
+
+  /// Grows with every new search. A response for an older search is ignored.
+  int _generation = 0;
+
+  bool get _hasMore => _items.length < _total;
 
   @override
   void initState() {
     super.initState();
-    _future = AppServices.of(context).trips.search(widget.query);
+    _load(first: true);
   }
 
-  Future<void> _reload() async {
-    final f = AppServices.of(context).trips.search(widget.query);
-    setState(() {
-      _future = f;
-    });
-    try {
-      await f;
-    } catch (_) {}
-  }
-
-  List<TripSearchResult> _sorted(List<TripSearchResult> items) {
-    final list = items.where((r) => !_cargoOnly || r.allowsCargo).toList();
-    switch (_sort) {
-      case _Sort.earliest:
-        list.sort((a, b) => a.pickupTime.compareTo(b.pickupTime));
-      case _Sort.cheapest:
-        list.sort((a, b) => a.segmentPriceCents.compareTo(b.segmentPriceCents));
-      case _Sort.closest:
-        list.sort((a, b) => a.walkingKm.compareTo(b.walkingKm));
+  /// Loads page 1 for the current sort and filters and replaces the list.
+  Future<void> _load({bool first = false}) async {
+    final generation = ++_generation;
+    void reset() {
+      _loading = true;
+      _loadingMore = false;
+      _error = null;
+      _pageError = null;
     }
-    return list;
+
+    // setState cannot be called from initState.
+    if (first) {
+      reset();
+    } else {
+      setState(reset);
+    }
+    try {
+      final page = await AppServices.of(context).trips.search(_query, page: 1);
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _items
+          ..clear()
+          ..addAll(page.items);
+        _total = page.total;
+        _page = 1;
+        _radiusKm = page.radiusKm;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _error = e;
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || _loadingMore || !_hasMore || _pageError != null) return;
+    final generation = _generation;
+    setState(() => _loadingMore = true);
+    try {
+      final page = await AppServices.of(context).trips.search(_query, page: _page + 1);
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _items.addAll(page.items);
+        // An empty page means the list changed on the server: stop asking for more.
+        _total = page.items.isEmpty ? _items.length : page.total;
+        _page = page.page;
+        _loadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _pageError = e;
+        _loadingMore = false;
+      });
+    }
+  }
+
+  void _retryPage() {
+    setState(() => _pageError = null);
+    _loadMore();
+  }
+
+  void _setSort(String sort) {
+    if (sort == _query.sort) return;
+    _query = _query.copyWith(sort: sort);
+    _load();
+  }
+
+  void _setFilters(SearchFilters filters) {
+    if (filters == _query.filters) return;
+    _query = _query.copyWith(filters: filters);
+    _load();
+  }
+
+  Future<void> _openFilters() async {
+    final picked = await showModalBottomSheet<SearchFilters>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => SearchFiltersSheet(initial: _query.filters),
+    );
+    if (picked != null && mounted) _setFilters(picked);
+  }
+
+  void _openTrip(TripSearchResult r) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => PassengerTripDetailScreen(
+        tripId: r.tripId,
+        fromStop: r.pickup.order!,
+        toStop: r.drop.order!,
+        seats: _query.seats,
+      ),
+    ));
   }
 
   @override
   Widget build(BuildContext context) {
-    final q = widget.query;
+    final theme = Theme.of(context);
+    final q = _query;
+    final activeFilters = q.filters.activeCount;
     return Scaffold(
       appBar: AppBar(
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('${q.from.name} → ${q.to.name}', style: const TextStyle(fontSize: 18)),
-          Text('${formatDate(q.date)} · ${q.seats} seat${q.seats > 1 ? 's' : ''}', style: const TextStyle(fontSize: 13)),
+          Text('${q.from.name} → ${q.to.name}', overflow: TextOverflow.ellipsis),
+          Text(
+            '${formatDate(q.date)} · ${q.seats} seat${q.seats > 1 ? 's' : ''}',
+            style: theme.textTheme.bodySmall,
+            overflow: TextOverflow.ellipsis,
+          ),
         ]),
       ),
       body: Column(children: [
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
           child: Row(children: [
-            for (final s in _Sort.values)
+            Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.sm),
+              child: ActionChip(
+                avatar: const Icon(Icons.tune, size: 18),
+                label: Text(activeFilters == 0 ? 'Filters' : 'Filters ($activeFilters)'),
+                tooltip: 'Filter rides',
+                onPressed: _openFilters,
+              ),
+            ),
+            for (final s in SearchSort.values)
               Padding(
-                padding: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.only(right: AppSpacing.sm),
                 child: ChoiceChip(
-                  label: Text(switch (s) {
-                    _Sort.earliest => 'Earliest',
-                    _Sort.cheapest => 'Cheapest',
-                    _Sort.closest => 'Closest pickup',
-                  }),
-                  selected: _sort == s,
-                  onSelected: (_) => setState(() => _sort = s),
+                  label: Text(SearchSort.label(s)),
+                  selected: q.sort == s,
+                  onSelected: (_) => _setSort(s),
                 ),
               ),
-            FilterChip(
-              label: const Text('Takes cargo'),
-              selected: _cargoOnly,
-              onSelected: (v) => setState(() => _cargoOnly = v),
-            ),
           ]),
         ),
-        Expanded(
-          child: FutureBuilder<SearchPage>(
-            future: _future,
-            builder: (context, snap) {
-              if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
-              if (snap.hasError) return ErrorView(error: snap.error!, onRetry: _reload);
-              final results = _sorted(snap.data!.items);
-              if (results.isEmpty) {
-                return EmptyView(
-                  icon: Icons.search_off,
-                  message: 'No rides found within ${snap.data!.radiusKm.round()} km of your points on this day.\n'
-                      'Try another date or a bigger pickup distance.',
-                  action: OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Change search')),
-                );
-              }
-              return RefreshIndicator(
-                onRefresh: _reload,
-                child: ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 24),
-                  itemCount: results.length + 1,
-                  itemBuilder: (_, i) {
-                    if (i == 0) {
-                      return Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                        child: Text('${results.length} ride${results.length == 1 ? '' : 's'} found',
-                            style: Theme.of(context).textTheme.bodySmall),
-                      );
-                    }
-                    final r = results[i - 1];
-                    return _ResultCard(
-                      result: r,
-                      seats: q.seats,
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => PassengerTripDetailScreen(
-                          tripId: r.tripId,
-                          fromStop: r.pickup.order!,
-                          toStop: r.drop.order!,
-                          seats: q.seats,
-                        ),
-                      )),
-                    );
-                  },
-                ),
-              );
-            },
-          ),
-        ),
+        Expanded(child: _body(theme)),
       ]),
+    );
+  }
+
+  Widget _body(ThemeData theme) {
+    if (_loading) return const SkeletonList();
+    if (_error != null) return ErrorView(error: _error!, onRetry: _load);
+    if (_items.isEmpty) {
+      final filtered = !_query.filters.isEmpty;
+      return RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(children: [
+          EmptyView(
+            icon: Icons.search_off,
+            message: filtered
+                ? 'No rides match your filters.'
+                : 'No rides found within ${_radiusKm.round()} km of your points on this day.\n'
+                    'Try another date or a bigger pickup distance.',
+            action: filtered
+                ? FilledButton.icon(
+                    onPressed: () => _setFilters(SearchFilters.none),
+                    icon: const Icon(Icons.filter_alt_off),
+                    label: const Text('Clear filters'),
+                  )
+                : OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Change search')),
+          ),
+        ]),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(AppSpacing.md, 0, AppSpacing.md, AppSpacing.xl),
+        // A header, the results and a footer (spinner, retry row or nothing).
+        itemCount: _items.length + 2,
+        itemBuilder: (_, i) {
+          if (i == 0) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpacing.xs, AppSpacing.xs, AppSpacing.xs, AppSpacing.sm),
+              child: Text(
+                '$_total ride${_total == 1 ? '' : 's'} found',
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            );
+          }
+          if (i == _items.length + 1) return _footer(theme);
+          final r = _items[i - 1];
+          return Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: TripResultCard(result: r, seats: _query.seats, onTap: () => _openTrip(r)),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _footer(ThemeData theme) {
+    if (_pageError != null) {
+      return AppCard(
+        child: Row(children: [
+          Icon(Icons.error_outline, color: theme.colorScheme.error),
+          const SizedBox(width: AppSpacing.md),
+          const Expanded(child: Text('Could not load more rides.')),
+          TextButton(onPressed: _retryPage, child: const Text('Retry')),
+        ]),
+      );
+    }
+    if (!_hasMore) return const SizedBox.shrink();
+    // Reaching the end of the list loads the next page.
+    if (!_loadingMore) WidgetsBinding.instance.addPostFrameCallback((_) => _loadMore());
+    return const Padding(
+      padding: EdgeInsets.all(AppSpacing.lg),
+      child: Center(child: CircularProgressIndicator()),
     );
   }
 }
 
-class _ResultCard extends StatelessWidget {
-  final TripSearchResult result;
-  final int seats;
-  final VoidCallback onTap;
-  const _ResultCard({required this.result, required this.seats, required this.onTap});
+/// Bottom sheet with the search filters (SCRUM-69). Pops the chosen [SearchFilters], or
+/// [SearchFilters.none] for Clear.
+class SearchFiltersSheet extends StatefulWidget {
+  final SearchFilters initial;
+  const SearchFiltersSheet({super.key, this.initial = SearchFilters.none});
+
+  @override
+  State<SearchFiltersSheet> createState() => _SearchFiltersSheetState();
+}
+
+class _SearchFiltersSheetState extends State<SearchFiltersSheet> {
+  late final _maxPrice = TextEditingController(
+    text: widget.initial.maxPriceCents == null ? '' : '${(widget.initial.maxPriceCents! / 100).round()}',
+  );
+  late final _minCargo = TextEditingController(
+    text: widget.initial.minCargoKg == null ? '' : _plain(widget.initial.minCargoKg!),
+  );
+  late String? _after = widget.initial.departAfter;
+  late String? _before = widget.initial.departBefore;
+  late bool _cargo = widget.initial.allowsCargo;
+  String? _priceError;
+  String? _cargoError;
+  String? _timeError;
+
+  static String _plain(double v) => v == v.roundToDouble() ? '${v.round()}' : '$v';
+
+  @override
+  void dispose() {
+    _maxPrice.dispose();
+    _minCargo.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickTime(bool after) async {
+    final current = after ? _after : _before;
+    final parts = (current ?? (after ? '06:00' : '18:00')).split(':');
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1])),
+      helpText: after ? 'Leaving after' : 'Leaving before',
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      final value = clockTime(picked.hour, picked.minute);
+      if (after) {
+        _after = value;
+      } else {
+        _before = value;
+      }
+      _timeError = null;
+    });
+  }
+
+  void _apply() {
+    final priceText = _maxPrice.text.trim();
+    final cargoText = _minCargo.text.trim();
+    final maxPrice = priceText.isEmpty ? null : parseLkrToCents(priceText);
+    final minCargo = cargoText.isEmpty ? null : double.tryParse(cargoText);
+    setState(() {
+      _priceError = priceText.isNotEmpty && maxPrice == null ? 'Enter an amount in LKR' : null;
+      _cargoError = cargoText.isNotEmpty && (minCargo == null || minCargo <= 0 || minCargo > 2000)
+          ? 'Enter a weight between 1 and 2000 kg'
+          : null;
+      _timeError = _after != null && _before != null && _after!.compareTo(_before!) >= 0
+          ? 'The first time must be before the second'
+          : null;
+    });
+    if (_priceError != null || _cargoError != null || _timeError != null) return;
+    Navigator.pop(
+      context,
+      SearchFilters(
+        maxPriceCents: maxPrice,
+        departAfter: _after,
+        departBefore: _before,
+        allowsCargo: _cargo,
+        minCargoKg: minCargo,
+      ),
+    );
+  }
+
+  Widget _timeButton(String label, String? value, bool after) => Expanded(
+        child: OutlinedButton(
+          onPressed: () => _pickTime(after),
+          child: Text(value == null ? label : '$label ${formatClockTime(value)}', overflow: TextOverflow.ellipsis),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final r = result;
-    final isAuction = r.pricingMode == PricingMode.auction;
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(formatTime(r.pickupTime), style: theme.textTheme.titleLarge),
-                  Text('${r.pickup.name} → ${r.drop.name}', style: theme.textTheme.titleSmall),
-                ]),
-              ),
-              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                Text(formatLkr(r.segmentPriceCents), style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                Text(isAuction ? 'starting bid / seat' : 'per seat', style: theme.textTheme.bodySmall),
-              ]),
-            ]),
-            const SizedBox(height: 8),
-            Wrap(spacing: 6, runSpacing: 6, children: [
-              TagChip(PricingMode.label(r.pricingMode), icon: isAuction ? Icons.gavel : Icons.sell),
-              TagChip('${r.seatsAvailable} seat${r.seatsAvailable == 1 ? '' : 's'} left', icon: Icons.event_seat),
-              TagChip(formatKm(r.segmentDistanceKm), icon: Icons.route),
-              if (r.allowsCargo) const TagChip('Cargo', icon: Icons.inventory_2),
-            ]),
-            const SizedBox(height: 8),
-            Text(
-              'Pickup ${formatKm(r.pickupDistanceKm)} from you · drop ${formatKm(r.dropDistanceKm)} from your destination',
-              style: theme.textTheme.bodySmall,
-            ),
-            if (!isAuction && seats > 1)
-              Text('Total for $seats seats: ${formatLkr(r.segmentPriceCents * seats)}', style: theme.textTheme.bodySmall),
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.lg),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+          Text('Filters', style: theme.textTheme.titleLarge),
+          const SectionTitle('Price per seat'),
+          TextField(
+            key: const Key('maxPrice'),
+            controller: _maxPrice,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(labelText: 'Highest price (LKR)', prefixText: 'LKR ', errorText: _priceError),
+          ),
+          SectionTitle(
+            'Departure time',
+            trailing: _after == null && _before == null
+                ? null
+                : IconButton(
+                    tooltip: 'Clear departure time',
+                    onPressed: () => setState(() {
+                      _after = null;
+                      _before = null;
+                      _timeError = null;
+                    }),
+                    icon: const Icon(Icons.close),
+                  ),
+          ),
+          Row(children: [
+            _timeButton('After', _after, true),
+            const SizedBox(width: AppSpacing.sm),
+            _timeButton('Before', _before, false),
           ]),
-        ),
+          if (_timeError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.xs),
+              child: Text(_timeError!, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error)),
+            ),
+          const SectionTitle('Cargo'),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Takes cargo'),
+            value: _cargo,
+            onChanged: (v) => setState(() => _cargo = v),
+          ),
+          TextField(
+            key: const Key('minCargo'),
+            controller: _minCargo,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(labelText: 'At least (kg)', suffixText: 'kg', errorText: _cargoError),
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(context, SearchFilters.none),
+                child: const Text('Clear'),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(child: FilledButton(onPressed: _apply, child: const Text('Apply'))),
+          ]),
+        ]),
       ),
     );
   }
