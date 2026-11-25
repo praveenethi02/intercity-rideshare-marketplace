@@ -7,11 +7,12 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/common_widgets.dart';
 import '../../models/search.dart';
 import '../../models/trip.dart';
+import '../../widgets/driver_vehicle_card.dart';
 import '../../widgets/search_result_card.dart';
 import '../../widgets/trip_widgets.dart';
 
 /// Passenger's view of a trip for their own segment (pickup → drop): seats left on each leg,
-/// cargo space, times and price (SCRUM-71, SCRUM-73, SCRUM-74).
+/// cargo space, times, price, driver and vehicle (SCRUM-70, SCRUM-71, SCRUM-73, SCRUM-74).
 /// The Book / Bid button hands a [SegmentSelection] to the Booking or
 /// Auction module via [AppServices.onBookSegment].
 class PassengerTripDetailScreen extends StatefulWidget {
@@ -182,6 +183,11 @@ class _PassengerTripDetailScreenState extends State<PassengerTripDetailScreen> {
                       ),
                   ]),
                 ),
+                const SectionTitle('Driver and vehicle'),
+                DriverVehicleCard(
+                  loadDriver: () => AppServices.of(context).trips.driverProfile(trip.driverId),
+                  vehicle: trip.vehicle,
+                ),
                 const SectionTitle('Seats'),
                 AppCard(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -192,9 +198,14 @@ class _PassengerTripDetailScreenState extends State<PassengerTripDetailScreen> {
                           style: theme.textTheme.titleMedium,
                         ),
                       ),
-                      AppBadge(
-                        a.seatsAvailable >= widget.seats ? 'Enough for you' : 'Not enough',
-                        tone: a.seatsAvailable >= widget.seats ? StatusTone.success : StatusTone.danger,
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: fitBadge(AppBadge(
+                            a.seatsAvailable >= widget.seats ? 'Enough for you' : 'Not enough',
+                            tone: a.seatsAvailable >= widget.seats ? StatusTone.success : StatusTone.danger,
+                          )),
+                        ),
                       ),
                     ]),
                     if (legs.isNotEmpty) ...[

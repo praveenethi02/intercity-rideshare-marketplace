@@ -1,5 +1,7 @@
 // Trip data classes. They match docs/trips-api.md. Money is LKR cents.
 
+import 'driver_vehicle.dart';
+
 double _toDouble(dynamic v) => (v as num).toDouble();
 double? _toDoubleOrNull(dynamic v) => v == null ? null : (v as num).toDouble();
 DateTime? _toLocalOrNull(dynamic v) => v == null ? null : DateTime.parse(v as String).toLocal();
@@ -118,6 +120,9 @@ class Trip {
   final String? originName;
   final String? destinationName;
 
+  /// Only in GET /trips/:id, and not from older servers.
+  final TripVehicle? vehicle;
+
   const Trip({
     required this.id,
     required this.driverId,
@@ -138,6 +143,7 @@ class Trip {
     this.seatsAvailableFullRoute,
     this.originName,
     this.destinationName,
+    this.vehicle,
   });
 
   factory Trip.fromJson(Map<String, dynamic> j) => Trip(
@@ -164,6 +170,7 @@ class Trip {
         seatsAvailableFullRoute: j['seatsAvailable'] as int?,
         originName: j['originName'] as String?,
         destinationName: j['destinationName'] as String?,
+        vehicle: j['vehicle'] == null ? null : TripVehicle.fromJson(j['vehicle'] as Map<String, dynamic>),
       );
 
   String get origin => stops.isNotEmpty ? stops.first.name : (originName ?? '—');
