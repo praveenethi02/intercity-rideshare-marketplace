@@ -9,6 +9,7 @@ import 'package:rideshare_mobile/core/api_client.dart';
 import 'package:rideshare_mobile/core/app_services.dart';
 import 'package:rideshare_mobile/core/formatters.dart';
 import 'package:rideshare_mobile/core/theme/app_theme.dart';
+import 'package:rideshare_mobile/core/widgets/common_widgets.dart';
 import 'package:rideshare_mobile/features/trips/data/towns.dart';
 import 'package:rideshare_mobile/features/trips/trips.dart';
 import 'package:rideshare_mobile/features/trips/widgets/search_result_card.dart';
@@ -104,6 +105,87 @@ class _SearchServer {
       );
 
   Map<String, String> get last => queries.last;
+}
+
+/// GET /trips/t1 for the ride details screen: Colombo Fort (0) -> Kadawatha (1) -> Kegalle (2) -> Kandy (3).
+Map<String, dynamic> _trip(
+        {String mode = 'FIXED', String status = 'SCHEDULED', String? notes = 'AC van, no smoking'}) =>
+    {
+      'id': 't1',
+      'driverId': 'd1',
+      'vehicleId': 'v1',
+      'pricingMode': mode,
+      'status': status,
+      'departureAt': '2026-11-27T00:30:00.000Z',
+      'estimatedArrivalAt': '2026-11-27T04:00:00.000Z',
+      'seatsOffered': 3,
+      'seatsAvailable': 1,
+      'basePriceCents': 250000,
+      'distanceKm': 145.2,
+      'allowsCargo': true,
+      'cargoCapacityKg': 120,
+      'notes': notes,
+      'stops': [
+        {'order': 0, 'name': 'Colombo Fort', 'lat': 6.93, 'lng': 79.84, 'distanceFromStartKm': 0},
+        {
+          'order': 1,
+          'name': 'Kadawatha',
+          'lat': 7.0,
+          'lng': 79.95,
+          'distanceFromStartKm': 16.4,
+          'plannedAt': '2026-11-27T01:00:00.000Z',
+        },
+        {'order': 2, 'name': 'Kegalle', 'lat': 7.25, 'lng': 80.35, 'distanceFromStartKm': 80.9},
+        {'order': 3, 'name': 'Kandy', 'lat': 7.29, 'lng': 80.63, 'distanceFromStartKm': 145.2},
+      ],
+      'legs': [
+        {'legIndex': 0, 'seatsReserved': 0, 'seatsAvailable': 3},
+        {'legIndex': 1, 'seatsReserved': 2, 'seatsAvailable': 1},
+        {'legIndex': 2, 'seatsReserved': 0, 'seatsAvailable': 3},
+      ],
+    };
+
+/// GET /trips/t1/availability?fromStop=1&toStop=3. [newFields] false is an older server.
+Map<String, dynamic> _availability({bool newFields = true}) => {
+      'tripId': 't1',
+      'fromStop': 1,
+      'toStop': 3,
+      'seatsAvailable': 1,
+      'segmentPriceCents': 220000,
+      if (newFields) ...{
+        'seatsOffered': 3,
+        'allowsCargo': true,
+        'cargoCapacityKg': 120,
+        'legs': [
+          {'legIndex': 1, 'fromName': 'Kadawatha', 'toName': 'Kegalle', 'seatsAvailable': 1},
+          {'legIndex': 2, 'fromName': 'Kegalle', 'toName': 'Kandy', 'seatsAvailable': 3},
+        ],
+      },
+    };
+
+/// A fake backend for the ride details screen.
+class _DetailServer {
+  int calls = 0;
+  Map<String, dynamic> trip = _trip();
+  Map<String, dynamic> availability = _availability();
+  Completer<void>? gate;
+  bool fail = false;
+
+  ApiClient get api => ApiClient(
+        baseUrl: 'http://test/api/v1',
+        tokenProvider: () async => 't',
+        httpClient: MockClient((request) async {
+          final path = request.url.path.replaceFirst('/api/v1', '');
+          if (gate != null) await gate!.future;
+          if (fail) return _fail(500, 'INTERNAL_ERROR', 'Server down');
+          if (path == '/trips/t1') {
+            calls++;
+            return _ok({'trip': trip});
+          }
+          if (path == '/trips/t1/availability') return _ok({'availability': availability});
+          return _fail(404, 'NOT_FOUND', 'Not found');
+        }),
+      );
 }
 
 final _query = SearchQuery(from: _town('Colombo Fort'), to: _town('Kandy'), date: DateTime(2026, 11, 27), seats: 2);
@@ -475,6 +557,120 @@ void main() {
       await pumpCard(tester, r, width: 320);
       expect(tester.takeException(), isNull);
       expect(find.text('Cargo up to 1250.5 kg'), findsOneWidget);
+    });
+  });
+
+  group('ride details (SCRUM-71, SCRUM-73, SCRUM-74)', () {
+    Future<void> pumpDetails(
+      WidgetTester tester,
+      _DetailServer server, {
+      int seats = 2,
+      BookSegmentCallback? onBook,
+      bool settle = true,
+      double width = 800,
+    }) async {
+      tester.view.physicalSize = Size(width, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.light,
+        builder: (context, child) =>
+            AppServices(trips: TripRepository(server.api), onBookSegment: onBook, child: child!),
+        home: PassengerTripDetailScreen(tripId: 't1', fromStop: 1, toStop: 3, seats: seats),
+      ));
+      if (settle) await tester.pumpAndSettle();
+    }
+
+    testWidgets('shows seats of seats offered, free seats per leg, cargo, times, price and notes', (tester) async {
+      final server = _DetailServer();
+      await pumpDetails(tester, server);
+
+      expect(find.text('Kadawatha → Kandy'), findsOneWidget);
+      expect(find.text('1 of 3 seats left on your part'), findsOneWidget);
+      expect(find.text('Kadawatha → Kegalle'), findsOneWidget);
+      expect(find.text('1 free'), findsOneWidget);
+      expect(find.text('Kegalle → Kandy'), findsOneWidget);
+      expect(find.text('3 free'), findsOneWidget);
+      expect(find.text('Up to 120 kg'), findsOneWidget);
+      expect(find.text(formatDateTime(DateTime.parse('2026-11-27T01:00:00.000Z').toLocal())), findsOneWidget);
+      // Riding to the last stop: the trip's estimated arrival.
+      expect(find.text('Arrival (estimate)'), findsOneWidget);
+      expect(find.text(formatDateTime(DateTime.parse('2026-11-27T04:00:00.000Z').toLocal())), findsOneWidget);
+      expect(find.text('129 km'), findsWidgets); // 145.2 - 16.4
+      expect(find.text('LKR 2,200'), findsOneWidget); // per seat
+      expect(find.text('Total for 2 seats'), findsOneWidget);
+      expect(find.text('LKR 4,400'), findsOneWidget);
+      expect(find.text('AC van, no smoking'), findsOneWidget);
+      expect(find.text('Not enough'), findsOneWidget); // 2 seats wanted, 1 left
+      expect(find.text('Not enough seats'), findsOneWidget); // the button
+    });
+
+    testWidgets('works with an older server that sends no legs or cargo with the availability', (tester) async {
+      final server = _DetailServer()..availability = _availability(newFields: false);
+      await pumpDetails(tester, server, seats: 1);
+
+      expect(find.text('1 of 3 seats left on your part'), findsOneWidget);
+      expect(find.text('Kadawatha → Kegalle'), findsOneWidget); // legs taken from the trip
+      expect(find.text('Up to 120 kg'), findsOneWidget);
+      expect(find.text('Book 1 seat · LKR 2,200'), findsOneWidget);
+    });
+
+    testWidgets('shows a skeleton while loading, then an error with retry', (tester) async {
+      final server = _DetailServer()
+        ..gate = Completer<void>()
+        ..fail = true;
+      await pumpDetails(tester, server, settle: false);
+      await tester.pump();
+      expect(find.byType(SkeletonList), findsOneWidget);
+
+      server.gate!.complete();
+      server.gate = null;
+      await tester.pumpAndSettle();
+      expect(find.text('Something went wrong'), findsOneWidget);
+
+      server.fail = false;
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+      expect(find.text('1 of 3 seats left on your part'), findsOneWidget);
+    });
+
+    testWidgets('pull to refresh loads the trip again', (tester) async {
+      final server = _DetailServer();
+      await pumpDetails(tester, server);
+      expect(server.calls, 1);
+
+      server.availability = {..._availability(), 'seatsAvailable': 3};
+      expect(find.byType(RefreshIndicator), findsOneWidget);
+      final list = tester.widget<ListView>(find.byType(ListView));
+      expect(list.physics, isA<AlwaysScrollableScrollPhysics>()); // pullable even when it fits
+      tester.state<RefreshIndicatorState>(find.byType(RefreshIndicator)).show();
+      await tester.pumpAndSettle();
+      expect(server.calls, 2);
+      expect(find.text('3 of 3 seats left on your part'), findsOneWidget);
+    });
+
+    testWidgets('Book hands the selection to the booking module and reloads', (tester) async {
+      final server = _DetailServer()..availability = {..._availability(), 'seatsAvailable': 3};
+      SegmentSelection? selected;
+      await pumpDetails(tester, server, onBook: (context, selection) async => selected = selection);
+
+      await tester.tap(find.text('Book 2 seats · LKR 4,400'));
+      await tester.pumpAndSettle();
+
+      expect(selected, isNotNull);
+      expect(
+        [selected!.tripId, selected!.fromStop, selected!.toStop, selected!.seats, selected!.pricePerSeatCents],
+        ['t1', 1, 3, 2, 220000],
+      );
+      expect(selected!.pricingMode, 'FIXED');
+      expect(server.calls, 2); // reloaded after booking
+    });
+
+    testWidgets('fits a 320 px wide screen', (tester) async {
+      final server = _DetailServer();
+      await pumpDetails(tester, server, width: 320);
+      expect(tester.takeException(), isNull);
+      expect(find.text('Up to 120 kg'), findsOneWidget);
     });
   });
 }
