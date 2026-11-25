@@ -21,12 +21,16 @@ class PassengerTripDetailScreen extends StatefulWidget {
   final int toStop;
   final int seats;
 
+  /// Called after the passenger was in the booking screens, where the free seats may have changed.
+  final VoidCallback? onSeatsChanged;
+
   const PassengerTripDetailScreen({
     super.key,
     required this.tripId,
     required this.fromStop,
     required this.toStop,
     this.seats = 1,
+    this.onSeatsChanged,
   });
 
   @override
@@ -36,10 +40,22 @@ class PassengerTripDetailScreen extends StatefulWidget {
 class _PassengerTripDetailScreenState extends State<PassengerTripDetailScreen> {
   late Future<(Trip, SegmentAvailability)> _future;
 
+  /// True while another screen, such as the booking screens, covers this one.
+  bool _covered = false;
+
   @override
   void initState() {
     super.initState();
     _future = _fetch();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final isCurrent = ModalRoute.isCurrentOf(context) ?? true;
+    // Back from the booking screens: a booking may have been made or cancelled there.
+    if (isCurrent && _covered) _future = _fetch();
+    _covered = !isCurrent;
   }
 
   Future<(Trip, SegmentAvailability)> _fetch() async {
@@ -82,6 +98,7 @@ class _PassengerTripDetailScreenState extends State<PassengerTripDetailScreen> {
       return;
     }
     await handler(context, selection);
+    widget.onSeatsChanged?.call();
     if (mounted) _reload(); // seats may have changed
   }
 

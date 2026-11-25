@@ -666,6 +666,86 @@ void main() {
       expect(server.calls, 2); // reloaded after booking
     });
 
+    testWidgets('loads the seats again when the passenger comes back from the booking screens', (tester) async {
+      final server = _DetailServer()..availability = {..._availability(), 'seatsAvailable': 3};
+      await pumpDetails(tester, server, onBook: (context, selection) async {
+        // Like the booking screens: confirm is replaced by the next screen.
+        await Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (context) => TextButton(
+            onPressed: () => Navigator.of(context).pushReplacement(
+              MaterialPageRoute<void>(builder: (_) => Scaffold(appBar: AppBar(title: const Text('Booked')))),
+            ),
+            child: const Text('Confirm'),
+          ),
+        ));
+      });
+      await tester.tap(find.text('Book 2 seats · LKR 4,400'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm'));
+      await tester.pumpAndSettle();
+
+      // The booking changes while its screen covers the ride details.
+      server.availability = {..._availability(), 'seatsAvailable': 1};
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text('1 of 3 seats left on your part'), findsOneWidget);
+    });
+
+    testWidgets('search results are loaded again after booking, but not after only looking', (tester) async {
+      var searches = 0;
+      final client = MockClient((request) async {
+        final path = request.url.path.replaceFirst('/api/v1', '');
+        if (path == '/trips/search') {
+          searches++;
+          return _ok({
+            'results': [_result('t1')],
+          }, meta: {
+            'page': 1,
+            'total': 1,
+            'radiusKm': 5
+          });
+        }
+        if (path == '/trips/t1') return _ok({'trip': _trip()});
+        if (path == '/trips/t1/availability') {
+          return _ok({
+            'availability': {..._availability(), 'seatsAvailable': 3}
+          });
+        }
+        return _fail(404, 'NOT_FOUND', 'Not found');
+      });
+      final api = ApiClient(baseUrl: 'http://test/api/v1', tokenProvider: () async => 't', httpClient: client);
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.light,
+        builder: (context, child) =>
+            AppServices(trips: TripRepository(api), onBookSegment: (_, __) async {}, child: child!),
+        home: SearchResultsScreen(query: _query),
+      ));
+      await tester.pumpAndSettle();
+
+      Future<void> open() async {
+        await tester.tap(find.byType(TripResultCard));
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> back() async {
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+      }
+
+      await open();
+      await back();
+      expect(searches, 1);
+
+      await open();
+      await tester.tap(find.text('Book 2 seats · LKR 4,400'));
+      await tester.pumpAndSettle();
+      await back();
+      expect(searches, 2);
+    });
+
     testWidgets('fits a 320 px wide screen', (tester) async {
       final server = _DetailServer();
       await pumpDetails(tester, server, width: 320);
