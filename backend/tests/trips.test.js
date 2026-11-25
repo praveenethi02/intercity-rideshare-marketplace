@@ -329,6 +329,158 @@ describe('search and seats per segment', () => {
   });
 });
 
+describe('route-segment matching (SCRUM-72)', () => {
+  // Colombo Fort (0) -> Kadawatha (1) -> Kegalle (2) -> Kandy (3)
+  const NEAR = {
+    fort: { lat: 6.935, lng: 79.843 },
+    kadawatha: { lat: 7.0, lng: 79.95 },
+    kegalle: { lat: 7.25, lng: 80.35 },
+    kandy: { lat: 7.29, lng: 80.63 },
+  };
+  const DAY = colomboDate(inHours(48));
+  const at = (hhmm, day = DAY) => new Date(`${day}T${hhmm}:00+05:30`).toISOString();
+  const nextDay = (day) => new Date(new Date(`${day}T00:00:00Z`).getTime() + 86_400_000).toISOString().slice(0, 10);
+
+  const search = (token, from, to, params = {}) =>
+    get(
+      `/trips/search?${new URLSearchParams({
+        fromLat: from.lat,
+        fromLng: from.lng,
+        toLat: to.lat,
+        toLng: to.lng,
+        date: DAY,
+        ...params,
+      })}`,
+      token,
+    );
+  const results = async (...args) => (await search(...args)).body.data.results;
+
+  test('pickup and drop in the middle of the route', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token, { departureAt: at('08:00') });
+    const passenger = await signedInPassenger();
+
+    const [hit, ...rest] = await results(passenger.token, NEAR.kadawatha, NEAR.kegalle);
+
+    expect(rest).toEqual([]);
+    expect(hit).toMatchObject({ tripId: trip.id, pickup: { stopOrder: 1 }, drop: { stopOrder: 2 } });
+    expect(hit.segmentDistanceKm).toBeLessThan(trip.distanceKm);
+  });
+
+  test('the whole route', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token, { departureAt: at('08:00') });
+    const passenger = await signedInPassenger();
+
+    const [hit] = await results(passenger.token, NEAR.fort, NEAR.kandy);
+
+    expect(hit).toMatchObject({ tripId: trip.id, pickup: { stopOrder: 0 }, drop: { stopOrder: 3 } });
+    expect(hit.segmentPriceCents).toBe(250000);
+    expect(hit.segmentDistanceKm).toBe(trip.distanceKm);
+  });
+
+  test('a passenger going the other way is not matched', async () => {
+    const driver = await signedInDriver();
+    await publishedTrip(driver.token, { departureAt: at('08:00') });
+    const passenger = await signedInPassenger();
+
+    expect(await results(passenger.token, NEAR.kegalle, NEAR.kadawatha)).toEqual([]);
+    expect(await results(passenger.token, NEAR.kandy, NEAR.fort)).toEqual([]);
+  });
+
+  test('stops outside the radius are not matched', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token, { departureAt: at('08:00') });
+    const passenger = await signedInPassenger();
+    const gampaha = { lat: 7.0917, lng: 79.9997 }; // about 11 km from Kadawatha
+
+    expect(await results(passenger.token, gampaha, NEAR.kegalle)).toEqual([]);
+    expect(await results(passenger.token, gampaha, NEAR.kegalle, { radiusKm: 5 })).toEqual([]);
+    const wide = await results(passenger.token, gampaha, NEAR.kegalle, { radiusKm: 15 });
+    expect(wide.map((r) => r.tripId)).toEqual([trip.id]);
+    expect(wide[0].pickup.distanceFromYouKm).toBeGreaterThan(5);
+  });
+
+  test('two nearby stops: the closest pair is used, one result per trip', async () => {
+    const driver = await signedInDriver();
+    const stops = [
+      STOPS[0],
+      STOPS[1], // Kadawatha
+      { name: 'Kadawatha North', lat: 7.02, lng: 79.965 }, // about 2.5 km further on
+      STOPS[2],
+      STOPS[3],
+    ];
+    const trip = await publishedTrip(driver.token, { departureAt: at('08:00'), stops });
+    const passenger = await signedInPassenger();
+
+    // Standing next to Kadawatha North; Kadawatha is also inside the 5 km radius.
+    const hits = await results(passenger.token, { lat: 7.019, lng: 79.964 }, NEAR.kegalle);
+
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({ tripId: trip.id, pickup: { stopOrder: 2, name: 'Kadawatha North' } });
+    expect(hits[0].pickup.distanceFromYouKm).toBeLessThan(0.5);
+  });
+
+  test('a full leg outside the segment does not block it, a full leg inside does', async () => {
+    const driver = await signedInDriver();
+    const trip = await publishedTrip(driver.token, { departureAt: at('08:00') }); // 3 seats
+    const passenger = await signedInPassenger();
+
+    // Colombo -> Kadawatha (leg 0) and Kegalle -> Kandy (leg 2) are full.
+    await db.transaction((tx) => reserveSeats(tx, trip.id, 0, 1, 3));
+    await db.transaction((tx) => reserveSeats(tx, trip.id, 2, 3, 3));
+
+    const middle = await results(passenger.token, NEAR.kadawatha, NEAR.kegalle, { seats: 3 });
+    expect(middle).toMatchObject([{ tripId: trip.id, seatsAvailable: 3 }]);
+    expect(await results(passenger.token, NEAR.kadawatha, NEAR.kandy)).toEqual([]);
+    expect(await results(passenger.token, NEAR.fort, NEAR.kegalle)).toEqual([]);
+  });
+
+  test('only SCHEDULED trips that have not left are matched', async () => {
+    const driver = await signedInDriver();
+    const passenger = await signedInPassenger();
+    const today = colomboDate(inHours(1));
+    const soon = (minutes) => `now() + interval '${minutes} minutes'`;
+
+    await createTrip(driver.token, { departureAt: at('08:00') }); // DRAFT
+    const cancelled = await publishedTrip(driver.token, { departureAt: at('09:00') });
+    await post(`/trips/${cancelled.id}/cancel`, { reason: 'Car broke down' }, driver.token);
+    expect(await results(passenger.token, NEAR.kadawatha, NEAR.kegalle)).toEqual([]);
+
+    // Trips leaving within the hour: one has left, one is driving, one is done, one is still open.
+    const departed = await publishedTrip(driver.token);
+    const driving = await publishedTrip(driver.token);
+    const done = await publishedTrip(driver.token);
+    const open = await publishedTrip(driver.token);
+    await db.query(`UPDATE trips SET departure_at = now() - interval '5 minutes' WHERE id = $1`, [departed.id]);
+    for (const trip of [driving, done, open]) {
+      await db.query(`UPDATE trips SET departure_at = ${soon(20)} WHERE id = $1`, [trip.id]);
+    }
+    expect((await post(`/trips/${driving.id}/start`, {}, driver.token)).status).toBe(200);
+    expect((await post(`/trips/${done.id}/start`, {}, driver.token)).status).toBe(200);
+    expect((await post(`/trips/${done.id}/complete`, {}, driver.token)).status).toBe(200);
+
+    // The 20-minute trips may fall on tomorrow's date late at night, so search both days.
+    const found = [
+      ...(await results(passenger.token, NEAR.kadawatha, NEAR.kegalle, { date: today })),
+      ...(await results(passenger.token, NEAR.kadawatha, NEAR.kegalle, { date: nextDay(today) })),
+    ].map((r) => r.tripId);
+    expect(found).toEqual([open.id]);
+  });
+
+  test('a trip near midnight is found on its Sri Lankan date', async () => {
+    const driver = await signedInDriver();
+    const lateNight = await publishedTrip(driver.token, { departureAt: at('23:50') });
+    const afterMidnight = await publishedTrip(driver.token, { departureAt: at('00:10', nextDay(DAY)) });
+    const passenger = await signedInPassenger();
+    const ids = async (date) => (await results(passenger.token, NEAR.fort, NEAR.kandy, { date })).map((r) => r.tripId);
+
+    // 23:50 in Colombo is 18:20 UTC on the same date; 00:10 is 18:40 UTC on the date before.
+    expect(await ids(DAY)).toEqual([lateNight.id]);
+    expect(await ids(nextDay(DAY))).toEqual([afterMidnight.id]);
+  });
+});
+
 describe('search filters and sorting (SCRUM-67, SCRUM-69)', () => {
   // A Sri Lankan day two days from now, so every time on it is far enough ahead to publish.
   const DAY = colomboDate(inHours(48));
