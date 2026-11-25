@@ -23,11 +23,13 @@ class BookingApi {
         'seats': s.seats,
       }));
 
-  Future<List<Booking>> mine(BookingWhen when) async {
-    final r = await api.get('/bookings/mine', query: {'when': when.name, 'limit': '50'});
-    return ((r.data as Map<String, dynamic>)['bookings'] as List<dynamic>)
+  /// One page of the passenger's bookings, newest first.
+  Future<BookingPage> mine(BookingWhen when, {int page = 1}) async {
+    final r = await api.get('/bookings/mine', query: {'when': when.name, 'page': '$page', 'limit': '20'});
+    final items = ((r.data as Map<String, dynamic>)['bookings'] as List<dynamic>)
         .map((b) => Booking.fromJson(b as Map<String, dynamic>))
         .toList();
+    return BookingPage(items: items, page: page, totalPages: (r.meta['totalPages'] as int?) ?? page);
   }
 
   /// One booking with its journey details.

@@ -13,8 +13,8 @@ import 'package:rideshare_mobile/features/bookings/bookings.dart';
 import 'package:rideshare_mobile/features/trips/trips.dart';
 import 'package:rideshare_mobile/features/trips/widgets/trip_widgets.dart';
 
-http.Response _ok(Object? data, [int status = 200]) =>
-    http.Response(jsonEncode({'success': true, 'message': 'OK', 'data': data, 'meta': null}), status);
+http.Response _ok(Object? data, [int status = 200, Object? meta]) =>
+    http.Response(jsonEncode({'success': true, 'message': 'OK', 'data': data, 'meta': meta}), status);
 
 http.Response _fail(int status, String code, String message) => http.Response(
       jsonEncode({
@@ -135,6 +135,8 @@ class _Server {
   final Map<String, Object?> sent = {};
   http.Response Function(http.Request request)? onCreate;
   List<Map<String, dynamic>> upcoming = [_booking()];
+  List<List<Map<String, dynamic>>> pastPages = [[]];
+  bool pageFails = false;
   Map<String, dynamic> details = _details();
   bool detailsFail = false;
   bool driverFails = false;
@@ -159,7 +161,10 @@ class _Server {
         if (path == '/bookings/mine') {
           mineCalls++;
           final when = request.url.queryParameters['when'];
-          return _ok({'bookings': when == 'upcoming' ? upcoming : <Object>[]});
+          final page = int.parse(request.url.queryParameters['page'] ?? '1');
+          final pages = when == 'past' ? pastPages : [upcoming];
+          if (page > 1 && pageFails) return _fail(500, 'INTERNAL_ERROR', 'Server down');
+          return _ok({'bookings': pages[page - 1]}, 200, {'page': page, 'totalPages': pages.length});
         }
         if (request.method == 'POST' && path == '/bookings/b1/cancel') {
           sent['cancel'] = true;
@@ -273,8 +278,36 @@ void main() {
       expect(find.text('BK-7Q2K9M'), findsNothing);
     });
 
+    testWidgets('loads older bookings page by page, without repeating one', (tester) async {
+      Map<String, dynamic> past(String id) => {..._booking(id: id, tripStatus: 'COMPLETED'), 'reference': 'BK-$id'};
+      final server = _Server()
+        ..pastPages = [
+          [past('p1'), past('p2')],
+          [past('p2'), past('p3')],
+        ];
+      await _pump(tester, server, (api) => MyBookingsScreen(api: api));
+      expect(find.text('Load more'), findsNothing); // one page of upcoming bookings
+      await tester.tap(find.text('Past'));
+      await tester.pumpAndSettle();
+      expect(find.text('BK-p3'), findsNothing);
+
+      server.pageFails = true;
+      await tester.tap(find.text('Load more'));
+      await tester.pumpAndSettle();
+      expect(find.text('Server down'), findsOneWidget);
+      expect(find.text('BK-p1'), findsOneWidget);
+
+      server.pageFails = false;
+      await tester.tap(find.text('Load more'));
+      await tester.pumpAndSettle();
+      for (final id in ['p1', 'p2', 'p3']) {
+        expect(find.text('BK-$id'), findsOneWidget);
+      }
+      expect(find.text('Load more'), findsNothing);
+    });
+
     testWidgets('fits a 320 px wide screen with large text', (tester) async {
-      final server = _Server()..upcoming = [_booking(tripStatus: 'CANCELLED'), _booking()];
+      final server = _Server()..upcoming = [_booking(id: 'b2', tripStatus: 'CANCELLED'), _booking()];
       await _pump(tester, server, (api) => MyBookingsScreen(api: api), size: const Size(320, 3000), textScale: 2);
       expect(tester.takeException(), isNull);
       expect(find.text('Trip cancelled'), findsOneWidget);

@@ -20,6 +20,17 @@ class BookingStop {
       );
 }
 
+/// One page of GET /bookings/mine.
+class BookingPage {
+  final List<Booking> items;
+  final int page;
+  final int totalPages;
+
+  const BookingPage({required this.items, required this.page, required this.totalPages});
+
+  bool get hasMore => page < totalPages;
+}
+
 class Booking {
   final String id;
   final String reference;
