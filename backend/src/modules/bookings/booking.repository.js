@@ -68,6 +68,32 @@ async function findById(id, client = db) {
   return rows[0] || null;
 }
 
+/**
+ * The rest of the journey for the detail view. Read-only: the trips and vehicles modules own these
+ * tables. The vehicle columns are null if the vehicle row is missing.
+ */
+async function findJourney(tripId, client = db) {
+  const { rows } = await client.query(
+    `SELECT t.started_at, t.completed_at, t.cancel_reason,
+            v.vehicle_type, v.make, v.model, v.year, v.color, v.plate_number
+     FROM trips t LEFT JOIN vehicles v ON v.id = t.vehicle_id
+     WHERE t.id = $1`,
+    [tripId],
+  );
+  return rows[0] || null;
+}
+
+/** The stops from fromStop to toStop, both included, in driving order. */
+async function findSegmentStops(tripId, fromStop, toStop, client = db) {
+  const { rows } = await client.query(
+    `SELECT stop_order, name, planned_at FROM trip_stops
+     WHERE trip_id = $1 AND stop_order BETWEEN $2 AND $3
+     ORDER BY stop_order`,
+    [tripId, fromStop, toStop],
+  );
+  return rows;
+}
+
 /** Locks the booking row until the transaction ends. */
 async function lock(id, client) {
   const { rows } = await client.query(`SELECT ${BOOKING_COLUMNS} FROM bookings WHERE id = $1 FOR UPDATE`, [id]);
@@ -108,6 +134,8 @@ module.exports = {
   referenceExists,
   insert,
   findById,
+  findJourney,
+  findSegmentStops,
   lock,
   listForPassenger,
   cancel,

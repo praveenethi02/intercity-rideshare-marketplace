@@ -46,6 +46,19 @@ function toBooking(row) {
   };
 }
 
+/** The vehicle of a booking. plateNumber is null unless showPlate is true. */
+function toBookingVehicle(journey, showPlate) {
+  if (!journey.vehicle_type) return null;
+  return {
+    type: journey.vehicle_type,
+    make: journey.make,
+    model: journey.model,
+    year: journey.year,
+    color: journey.color,
+    plateNumber: showPlate ? journey.plate_number : null,
+  };
+}
+
 // ---------- helpers ----------
 
 function randomReference() {
@@ -88,14 +101,46 @@ async function checkBookable(passenger, tripId) {
 
 // ---------- bookings ----------
 
-async function getBooking(id, viewer) {
+/** The booking row, if the viewer may see it. */
+async function findVisible(id, viewer) {
   const row = await repo.findById(id);
   if (!row) throw bookingNotFound();
   const canSee =
     viewer.role === ROLES.ADMIN || viewer.id === row.passenger_user_id || viewer.id === row.driver_user_id;
   // Others get 404, not 403, so they cannot tell which booking ids exist.
   if (!canSee) throw bookingNotFound();
-  return toBooking(row);
+  return row;
+}
+
+async function getBooking(id, viewer) {
+  return toBooking(await findVisible(id, viewer));
+}
+
+/**
+ * GET /bookings/:id: the booking with its journey details (SCRUM-83). Creating and cancelling use
+ * getBooking, so they keep the short shape.
+ */
+async function getBookingDetail(id, viewer) {
+  const row = await findVisible(id, viewer);
+  const [journey, stops] = await Promise.all([
+    repo.findJourney(row.trip_id),
+    repo.findSegmentStops(row.trip_id, row.from_stop, row.to_stop),
+  ]);
+  // The passenger needs the plate to find the vehicle, but not once the ride is off.
+  const isDriverOrAdmin = viewer.role === ROLES.ADMIN || viewer.id === row.driver_user_id;
+  const isOff = row.status === BOOKING_STATUS.CANCELLED || row.trip_status === TRIP_STATUS.CANCELLED;
+  const booking = toBooking(row);
+  return {
+    ...booking,
+    trip: {
+      ...booking.trip,
+      vehicle: toBookingVehicle(journey, isDriverOrAdmin || !isOff),
+      stops: stops.map((s) => ({ stopOrder: s.stop_order, name: s.name, plannedAt: s.planned_at })),
+      startedAt: journey.started_at,
+      completedAt: journey.completed_at,
+      cancelReason: journey.cancel_reason,
+    },
+  };
 }
 
 /**
@@ -172,4 +217,4 @@ async function cancelBooking(passenger, id, reason) {
   return getBooking(id, passenger);
 }
 
-module.exports = { getBooking, createBooking, listMyBookings, cancelBooking };
+module.exports = { getBooking, getBookingDetail, createBooking, listMyBookings, cancelBooking };
