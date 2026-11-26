@@ -1,6 +1,6 @@
 # Mobile app (Flutter)
 
-The Intercity Rideshare app. Each module adds its screens under `lib/features/<name>/`.
+The Ride Share app. Each module adds its screens under `lib/features/<name>/`.
 
 ## Run it
 

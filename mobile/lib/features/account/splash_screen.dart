@@ -32,11 +32,11 @@ class SplashScreen extends StatelessWidget {
                 color: onPrimary,
                 borderRadius: BorderRadius.circular(AppRadius.xl),
               ),
-              child: Icon(Icons.navigation, size: 48, color: colors.primary, semanticLabel: 'Intercity Rideshare'),
+              child: Icon(Icons.navigation, size: 48, color: colors.primary, semanticLabel: 'Ride Share'),
             ),
             const SizedBox(height: AppSpacing.xl),
             Text(
-              'Intercity Rideshare',
+              'Ride Share',
               style: theme.textTheme.headlineSmall?.copyWith(color: onPrimary),
             ),
             const SizedBox(height: AppSpacing.sm),

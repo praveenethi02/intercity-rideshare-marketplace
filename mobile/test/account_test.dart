@@ -232,7 +232,7 @@ void main() {
 
   testWidgets('SplashScreen shows the app name while it loads', (tester) async {
     await tester.pumpWidget(MaterialApp(theme: AppTheme.light, home: const SplashScreen()));
-    expect(find.text('Intercity Rideshare'), findsOneWidget);
+    expect(find.text('Ride Share'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
 }
