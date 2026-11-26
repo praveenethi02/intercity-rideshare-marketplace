@@ -26,8 +26,23 @@ registration and password reset codes in its terminal.
 | iOS simulator | `http://localhost:4000/api/v1` |
 | Real phone | `http://<your computer's Wi-Fi IP>:4000/api/v1` |
 
+*Developer settings* only appear in debug and profile builds. A release build has no way to change
+the address, so give it when you build:
+
+```bash
+flutter build apk --dart-define=API_BASE_URL=http://<server>:4000/api/v1
+```
+
+Without `API_BASE_URL` the app uses `http://10.0.2.2:4000/api/v1` (`http://localhost:4000/api/v1` on web).
+
 Android blocks plain `http` by default. For local testing only, add
 `android:usesCleartextTraffic="true"` to `<application>` in `android/app/src/main/AndroidManifest.xml`.
+
+## App name, icon and logo
+
+The app is called **Ride Share**. The logo is `assets/branding/logo.png` and the launcher icon is made
+from `assets/icon/app_icon.png`. After changing the icon image, run `dart run flutter_launcher_icons`
+and commit the files it changes under `android/` and `ios/`.
 
 ## Layout
 
