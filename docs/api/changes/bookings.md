@@ -230,6 +230,27 @@ Response **200**: `{ "message": "Booking cancelled", "data": { "booking": { "sta
 - Seats are counted per route segment by the trips module. Booking Colombo → Kadawatha does not
   use a seat on Kadawatha → Kandy. See "Seats per route segment" in [`trips.md`](trips.md).
 - Only the passenger can cancel, and only while the trip is `SCHEDULED`.
+## Admin: GET `/admin/bookings` and GET `/admin/bookings/:id` (SCRUM-231)
+
+Admin only (401 without a token, 403 `FORBIDDEN` for other roles). Read-only: admins cannot book or
+cancel through these routes.
+
+**GET `/admin/bookings`**: every booking, newest first. Query (all optional):
+
+| Param | Rule |
+| --- | --- |
+| `status` | `CONFIRMED` or `CANCELLED` |
+| `tripStatus` | `DRAFT`, `SCHEDULED`, `IN_PROGRESS`, `COMPLETED` or `CANCELLED` |
+| `search` | 1–100 characters. Matches the reference, the passenger's name or phone, or the trip's start or end town. `%` and `_` are taken literally |
+| `page` | Integer ≥ 1, default 1 |
+| `limit` | 1–100, default 20 |
+
+`data.bookings[]` is the Booking object plus `passenger` and `driver`, each
+`{ id, fullName, phone }`. `meta` has `page`, `limit`, `total`, `totalPages`. Any other query
+param returns 422 `VALIDATION_ERROR`.
+
+**GET `/admin/bookings/:id`**: the same detail as `GET /bookings/:id` (admins always see the
+plate number), plus `passenger` and `driver`. 404 `BOOKING_NOT_FOUND`, 422 for an id that is not a UUID.
 
 ## For other modules
 
