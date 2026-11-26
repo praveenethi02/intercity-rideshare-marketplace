@@ -14,11 +14,10 @@ class AccountScreen extends StatelessWidget {
 
   /// Opens the Driver tab. Null for admins, who have no driver tab.
   final VoidCallback? onOpenDriver;
-  
+
   /// Opens My bookings.
   final VoidCallback? onOpenBookings;
 
-  
   /// Opens the people the user can still rate.
   final VoidCallback? onRateTrips;
 
@@ -75,7 +74,7 @@ class AccountScreen extends StatelessWidget {
               ),
             ),
           ],
-                    if (onRateTrips != null && onOpenRatings != null) ...[
+          if (onRateTrips != null && onOpenRatings != null) ...[
             const SectionTitle('Ratings'),
             Card(
               child: Column(children: [

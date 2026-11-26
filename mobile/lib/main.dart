@@ -228,7 +228,6 @@ class _RideshareAppState extends State<RideshareApp> {
   }
 }
 
-
 class HomeShell extends StatefulWidget {
   final AppUser user;
   final DriverRepository drivers;
@@ -288,7 +287,7 @@ class _HomeShellState extends State<HomeShell> {
         onSaveProfile: widget.onSaveProfile,
         onSignOut: widget.onSignOut,
         onOpenDriver: driverTab == null ? null : () => _go(driverTab),
-                onRateTrips: () => Navigator.of(context).push(
+        onRateTrips: () => Navigator.of(context).push(
           MaterialPageRoute<void>(builder: (_) => PendingRatingsScreen(api: widget.ratings)),
         ),
         onOpenRatings: () => Navigator.of(context).push(
