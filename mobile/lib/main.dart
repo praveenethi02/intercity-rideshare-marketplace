@@ -14,6 +14,7 @@ import 'features/account/splash_screen.dart';
 import 'features/bookings/bookings.dart';
 import 'features/driver/driver.dart';
 import 'features/home/home_screen.dart';
+import 'features/ratings/ratings.dart';
 import 'features/trips/trips.dart';
 import 'features/vehicle/vehicle.dart';
 
@@ -37,6 +38,7 @@ class _RideshareAppState extends State<RideshareApp> {
   DriverRepository? _drivers;
   VehicleApi? _vehicles;
   BookingApi? _bookings;
+  RatingApi? _ratings;
   Vehicle? _vehicle;
   String? _baseUrl;
   bool _restoring = true;
@@ -97,6 +99,7 @@ class _RideshareAppState extends State<RideshareApp> {
       _drivers = DriverRepository(auth.api);
       _vehicles = VehicleApi(auth.api);
       _bookings = BookingApi(auth.api);
+      _ratings = RatingApi(auth.api);
       _vehicle = null;
     });
     if (auth.user?.isDriver ?? false) _checkDriverVehicle();
@@ -110,6 +113,7 @@ class _RideshareAppState extends State<RideshareApp> {
       _drivers = null;
       _vehicles = null;
       _bookings = null;
+      _ratings = null;
       _vehicle = null;
     });
   }
@@ -200,6 +204,7 @@ class _RideshareAppState extends State<RideshareApp> {
         onBecameDriver: _becameDriver,
         onSaveProfile: _saveProfile,
         bookings: _bookings!,
+        ratings: _ratings!,
       );
     }
     if (_restoring) return const SplashScreen();
@@ -231,6 +236,7 @@ class HomeShell extends StatefulWidget {
   final VoidCallback onBecameDriver;
   final SaveProfile onSaveProfile;
   final BookingApi bookings;
+  final RatingApi ratings;
   const HomeShell({
     super.key,
     required this.user,
@@ -239,6 +245,7 @@ class HomeShell extends StatefulWidget {
     required this.onBecameDriver,
     required this.onSaveProfile,
     required this.bookings,
+    required this.ratings,
   });
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -281,6 +288,14 @@ class _HomeShellState extends State<HomeShell> {
         onSaveProfile: widget.onSaveProfile,
         onSignOut: widget.onSignOut,
         onOpenDriver: driverTab == null ? null : () => _go(driverTab),
+                onRateTrips: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => PendingRatingsScreen(api: widget.ratings)),
+        ),
+        onOpenRatings: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ReceivedRatingsScreen(api: widget.ratings, userId: widget.user.id),
+          ),
+        ),
         onOpenBookings: () => Navigator.of(context).push(
           MaterialPageRoute<void>(builder: (_) => MyBookingsScreen(api: widget.bookings)),
         ),
