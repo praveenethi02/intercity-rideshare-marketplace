@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:rideshare_mobile/core/auth_service.dart';
+import 'package:rideshare_mobile/core/widgets/common_widgets.dart';
 import 'package:rideshare_mobile/features/auth/auth.dart';
 import 'package:rideshare_mobile/features/auth/widgets/auth_widgets.dart';
 
@@ -84,6 +85,33 @@ void main() {
   });
 
   group('sign in', () {
+    testWidgets('shows the logo above the title', (tester) async {
+      await _pumpLogin(tester, _Api((_) => _ok()));
+
+      expect(find.bySemanticsLabel('Ride Share'), findsOneWidget);
+      expect(tester.getSize(find.byType(AppLogo)).width, 200);
+      expect(tester.getBottomLeft(find.byType(AppLogo)).dy, lessThan(tester.getTopLeft(find.text('Sign in').first).dy));
+    });
+
+    testWidgets('fits a 320 px wide screen and scrolls with the keyboard open', (tester) async {
+      tester.view.physicalSize = const Size(320, 568);
+      tester.view.devicePixelRatio = 1;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+      addTearDown(tester.view.reset);
+      await tester
+          .pumpWidget(MaterialApp(home: LoginScreen(onSignedIn: (_) {}, httpClient: _Api((_) => _ok()).client)));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(find.byType(AppLogo), findsOneWidget);
+
+      // The list builds its rows lazily, so scroll until the button exists, then bring it fully on screen.
+      await tester.scrollUntilVisible(find.text('Create an account'), 100, scrollable: find.byType(Scrollable).first);
+      await tester.ensureVisible(find.text('Create an account'));
+      await tester.pumpAndSettle();
+      expect(find.text('Create an account').hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('signs in and sends the entered details', (tester) async {
       final api = _Api((_) => _ok({'user': _user, 'tokens': _tokens}));
       final signedIn = await _pumpLogin(tester, api);
@@ -154,7 +182,8 @@ void main() {
     }
 
     testWidgets('registers, verifies the code and signs in', (tester) async {
-      final api = _Api((path) => path == '/auth/otp/verify' ? _ok({'user': _user, 'tokens': _tokens}) : _ok({'user': _user}));
+      final api =
+          _Api((path) => path == '/auth/otp/verify' ? _ok({'user': _user, 'tokens': _tokens}) : _ok({'user': _user}));
       final signedIn = await _pumpLogin(tester, api);
 
       await openAndFill(tester);

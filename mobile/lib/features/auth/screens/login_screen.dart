@@ -124,6 +124,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return AuthPage(
+      header: const Center(child: AppLogo(size: 200)),
       title: 'Sign in',
       subtitle: 'Book your seat, bid fairly, travel safely.',
       children: [
@@ -171,7 +172,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 controller: _baseUrl,
                 decoration: const InputDecoration(
                   labelText: 'API base URL',
-                  helperText: 'Android emulator: 10.0.2.2 · iOS simulator: localhost · phone: your computer\'s Wi-Fi IP',
+                  helperText:
+                      'Android emulator: 10.0.2.2 · iOS simulator: localhost · phone: your computer\'s Wi-Fi IP',
                   helperMaxLines: 2,
                 ),
               ),

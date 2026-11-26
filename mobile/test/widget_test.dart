@@ -1,4 +1,5 @@
 // Smoke test. Also stops `flutter create .` from adding its default counter test.
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rideshare_mobile/core/session_store.dart';
 import 'package:rideshare_mobile/main.dart';
@@ -14,6 +15,8 @@ void main() {
   testWidgets('sign-in has no manual vehicle settings', (tester) async {
     await tester.pumpWidget(RideshareApp(store: MemorySessionStore()));
     await tester.pumpAndSettle();
+    // The logo sits above the form, so scroll down to the settings first.
+    await tester.scrollUntilVisible(find.text('Developer settings'), 100, scrollable: find.byType(Scrollable).first);
     await tester.tap(find.text('Developer settings'));
     await tester.pumpAndSettle();
     expect(find.text('API base URL'), findsOneWidget);

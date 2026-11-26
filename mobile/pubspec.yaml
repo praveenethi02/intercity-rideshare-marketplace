@@ -22,6 +22,9 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
+  assets:
+    - assets/branding/logo.png
+
   # Inter (SIL Open Font License, see assets/fonts/OFL.txt). Bundled so the app works offline.
   fonts:
     - family: Inter

@@ -197,3 +197,19 @@ Future<bool> confirmDialog(
   );
   return result ?? false;
 }
+
+/// The Ride Share logo with its name and tagline, on a white background (SCRUM-298).
+/// Screen readers read it as "Ride Share".
+class AppLogo extends StatelessWidget {
+  static const asset = 'assets/branding/logo.png';
+  static const label = 'Ride Share';
+
+  /// Width and height of the logo. The image is square.
+  final double size;
+  const AppLogo({super.key, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.asset(asset, width: size, height: size, fit: BoxFit.contain, semanticLabel: label);
+  }
+}
