@@ -15,7 +15,7 @@ const fileRoutes = require('./modules/files/file.routes');
 const vehicleRoutes = require('./modules/vehicles/vehicle.routes');
 const vehicleAdminRoutes = require('./modules/vehicles/vehicle.admin.routes');
 const { tripRoutes, savedRouteRoutes } = require('./modules/trips');
-const { bookingRoutes } = require('./modules/bookings');
+const { bookingRoutes, bookingAdminRoutes } = require('./modules/bookings');
 const { ratingRoutes } = require('./modules/ratings');
 
 function createApp() {
@@ -47,6 +47,7 @@ function createApp() {
   app.use('/api/v1/files', fileRoutes);
   app.use('/api/v1/vehicles', vehicleRoutes);
   app.use('/api/v1/admin/vehicles', vehicleAdminRoutes);
+  app.use('/api/v1/admin/bookings', bookingAdminRoutes);
   app.use('/api/v1/trips', tripRoutes);
   app.use('/api/v1/saved-routes', savedRouteRoutes);
   app.use('/api/v1/bookings', bookingRoutes);

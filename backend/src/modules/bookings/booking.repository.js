@@ -119,8 +119,99 @@ async function listForPassenger(passengerUserId, { when = null, page, limit }, c
   );
   return { bookings: rows, total: count.rows[0].total };
 }
+// ---------- admin (SCRUM-231) ----------
+
+/**
+ * One page of every booking for the admin, newest first, and the total. search matches the
+ * reference, the passenger's name or phone, and the trip's start or end.
+ */
+async function searchForAdmin({ status = null, tripStatus = null, search = null, page, limit }, client = db) {
+  // Escape LIKE wildcards so that a search for "100%" is taken literally.
+  const pattern = search ? `%${search.replace(/[\\%_]/g, '\\$&')}%` : null;
+  const filter = `
+    ($1::text IS NULL OR b.status = $1::text)
+    AND ($2::text IS NULL OR t.status = $2::text)
+    AND ($3::text IS NULL OR b.reference ILIKE $3::text OR pu.full_name ILIKE $3::text
+      OR pu.phone ILIKE $3::text OR t.origin_name ILIKE $3::text OR t.destination_name ILIKE $3::text)`;
+  const params = [status, tripStatus, pattern];
+  const from = `FROM bookings b JOIN trips t ON t.id = b.trip_id JOIN users pu ON pu.id = b.passenger_user_id`;
+
+  const count = await client.query(`SELECT count(*)::int AS total ${from} WHERE ${filter}`, params);
+  const { rows } = await client.query(
+    `SELECT b.id ${from} WHERE ${filter}
+     ORDER BY b.created_at DESC, b.id LIMIT $4::int OFFSET $5::int`,
+    [...params, limit, (page - 1) * limit],
+  );
+  const ids = rows.map((row) => row.id);
+  if (ids.length === 0) return { bookings: [], total: count.rows[0].total };
+
+  const full = await client.query(
+    `${BOOKING_WITH_TRIP} WHERE b.id = ANY($1::uuid[]) ORDER BY b.created_at DESC, b.id`,
+    // Postgres array literal works the same with pg and with PGlite in tests.
+    [`{${ids.join(',')}}`],
+  );
+  return { bookings: full.rows, total: count.rows[0].total };
+}
+
+/** Name and phone of each user id, for the admin views. Read-only: the users module owns this table. */
+async function findPeople(userIds, client = db) {
+  const byId = new Map();
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return byId;
+  const { rows } = await client.query('SELECT id, full_name, phone FROM users WHERE id = ANY($1::uuid[])', [
+    `{${ids.join(',')}}`,
+  ]);
+  for (const row of rows) byId.set(row.id, { id: row.id, fullName: row.full_name, phone: row.phone });
+  return byId;
+}
 
 async function cancel(id, reason, client = db) {
+  // ---------- admin (SCRUM-231) ----------
+
+/**
+ * One page of every booking for the admin, newest first, and the total. search matches the
+ * reference, the passenger's name or phone, and the trip's start or end.
+ */
+async function searchForAdmin({ status = null, tripStatus = null, search = null, page, limit }, client = db) {
+  // Escape LIKE wildcards so that a search for "100%" is taken literally.
+  const pattern = search ? `%${search.replace(/[\\%_]/g, '\\$&')}%` : null;
+  const filter = `
+    ($1::text IS NULL OR b.status = $1::text)
+    AND ($2::text IS NULL OR t.status = $2::text)
+    AND ($3::text IS NULL OR b.reference ILIKE $3::text OR pu.full_name ILIKE $3::text
+      OR pu.phone ILIKE $3::text OR t.origin_name ILIKE $3::text OR t.destination_name ILIKE $3::text)`;
+  const params = [status, tripStatus, pattern];
+  const from = `FROM bookings b JOIN trips t ON t.id = b.trip_id JOIN users pu ON pu.id = b.passenger_user_id`;
+
+  const count = await client.query(`SELECT count(*)::int AS total ${from} WHERE ${filter}`, params);
+  const { rows } = await client.query(
+    `SELECT b.id ${from} WHERE ${filter}
+     ORDER BY b.created_at DESC, b.id LIMIT $4::int OFFSET $5::int`,
+    [...params, limit, (page - 1) * limit],
+  );
+  const ids = rows.map((row) => row.id);
+  if (ids.length === 0) return { bookings: [], total: count.rows[0].total };
+
+  const full = await client.query(
+    `${BOOKING_WITH_TRIP} WHERE b.id = ANY($1::uuid[]) ORDER BY b.created_at DESC, b.id`,
+    // Postgres array literal works the same with pg and with PGlite in tests.
+    [`{${ids.join(',')}}`],
+  );
+  return { bookings: full.rows, total: count.rows[0].total };
+}
+
+/** Name and phone of each user id, for the admin views. Read-only: the users module owns this table. */
+async function findPeople(userIds, client = db) {
+  const byId = new Map();
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return byId;
+  const { rows } = await client.query('SELECT id, full_name, phone FROM users WHERE id = ANY($1::uuid[])', [
+    `{${ids.join(',')}}`,
+  ]);
+  for (const row of rows) byId.set(row.id, { id: row.id, fullName: row.full_name, phone: row.phone });
+  return byId;
+}
+
   await client.query(
     `UPDATE bookings SET status = 'CANCELLED', cancel_reason = $2, cancelled_at = now(), updated_at = now()
      WHERE id = $1`,
@@ -138,5 +229,9 @@ module.exports = {
   findSegmentStops,
   lock,
   listForPassenger,
+  searchForAdmin,
+  findPeople,
+  searchForAdmin,
+  findPeople,
   cancel,
 };

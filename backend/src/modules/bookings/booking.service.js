@@ -217,4 +217,34 @@ async function cancelBooking(passenger, id, reason) {
   return getBooking(id, passenger);
 }
 
-module.exports = { getBooking, getBookingDetail, createBooking, listMyBookings, cancelBooking };
+// ---------- admin (SCRUM-231) ----------
+
+/** Adds the passenger's and the driver's name and phone. Only admins get these. */
+async function withPeople(bookings) {
+  const people = await repo.findPeople(bookings.flatMap((b) => [b.passengerId, b.trip.driverId]));
+  return bookings.map((b) => ({
+    ...b,
+    passenger: people.get(b.passengerId) ?? null,
+    driver: people.get(b.trip.driverId) ?? null,
+  }));
+}
+
+async function adminListBookings(query) {
+  const { bookings, total } = await repo.searchForAdmin(query);
+  return { bookings: await withPeople(bookings.map(toBooking)), total };
+}
+
+async function adminGetBooking(admin, id) {
+  const [booking] = await withPeople([await getBookingDetail(id, admin)]);
+  return booking;
+}
+
+module.exports = {
+  getBooking,
+  getBookingDetail,
+  createBooking,
+  listMyBookings,
+  cancelBooking,
+  adminListBookings,
+  adminGetBooking,
+};

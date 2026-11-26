@@ -1,0 +1,52 @@
+/* Bookings admin pages (SCRUM-231). All classes start with "bk-" so they never clash with other modules. */
+.bk-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.bk-filters input { flex: 1 1 260px; }
+.bk-filters input,
+.bk-filters select {
+  padding: 9px 12px;
+  border: 1px solid var(--neutral-200);
+  border-radius: 10px;
+  background: var(--neutral-0);
+  font: inherit;
+}
+
+.bk-table-wrap { overflow-x: auto; border: 1px solid var(--neutral-200); border-radius: 12px; background: var(--neutral-0); }
+.bk-table { width: 100%; border-collapse: collapse; }
+.bk-table th,
+.bk-table td { padding: 10px 16px; border-bottom: 1px solid var(--neutral-100); text-align: left; white-space: nowrap; }
+.bk-table th { color: var(--neutral-600); font-size: 12px; font-weight: 500; }
+.bk-table tr:last-child td { border-bottom: 0; }
+.bk-table tbody tr:hover { background: var(--brand-50); }
+
+.bk-ref { font-weight: 600; letter-spacing: 0.5px; text-decoration: none; }
+.bk-sub { display: block; color: var(--neutral-600); font-size: 12px; }
+
+.bk-pager { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 12px; }
+
+.bk-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.bk-badge-scheduled { background: var(--success-100); color: #0b7a51; }
+.bk-badge-in_progress { background: var(--warn-100); color: #a86500; }
+.bk-badge-completed { background: var(--neutral-100); color: var(--neutral-600); }
+.bk-badge-cancelled { background: var(--danger-100); color: #b81f2c; }
+
+.bk-back { font-weight: 500; text-decoration: none; }
+.bk-spaced { margin-top: 16px; }
+.bk-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 20px 0; }
+.bk-heading h1 { margin: 0; letter-spacing: 1px; }
+
+.bk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.bk-card { padding: 20px; border: 1px solid var(--neutral-200); border-radius: 12px; background: var(--neutral-0); }
+.bk-card h2 { margin: 0 0 12px; font-size: 16px; }
+
+.bk-details { display: grid; grid-template-columns: 140px 1fr; gap: 10px 16px; margin: 0; }
+.bk-details dt { color: var(--neutral-600); }
+.bk-details dd { margin: 0; overflow-wrap: anywhere; }
+
+.bk-stops { margin: 0; padding-left: 20px; }
+.bk-stops li { margin-bottom: 8px; }
+.bk-stops span { display: block; font-size: 12px; }
+
+@media (max-width: 800px) {
+  .bk-details { grid-template-columns: 1fr; gap: 2px; }
+  .bk-details dd { margin-bottom: 8px; }
+}
