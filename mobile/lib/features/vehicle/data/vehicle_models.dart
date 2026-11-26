@@ -91,6 +91,23 @@ class Vehicle {
   });
 
   String get title => '$make $model ($year)';
+
+  /// "THREE_WHEELER" -> "Three-wheeler". The same labels as the API (vehicleTypes.js).
+  String get typeLabel => switch (vehicleType) {
+        'CAR' => 'Car',
+        'THREE_WHEELER' => 'Three-wheeler',
+        'MOTORBIKE' => 'Motorbike',
+        'SUV' => 'SUV',
+        'VAN' => 'Van',
+        'MINIBUS' => 'Mini bus',
+        'BUS' => 'Bus',
+        'PICKUP' => 'Pickup / Cab',
+        'LORRY' => 'Lorry',
+        // A type added to the API later: "NEW_TYPE" -> "New type".
+        _ => vehicleType.isEmpty
+            ? 'Vehicle'
+            : '${vehicleType[0]}${vehicleType.substring(1).toLowerCase().replaceAll('_', ' ')}',
+      };
   bool get canSubmit => verificationStatus == 'NOT_SUBMITTED' || verificationStatus == 'REJECTED';
 
   /// Same rule as the API: only an APPROVED, active vehicle can be used for trips.

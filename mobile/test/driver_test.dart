@@ -190,6 +190,30 @@ void main() {
       expect(find.text('Reason from the admin: Blurry licence'), findsOneWidget);
     });
 
+    testWidgets('My vehicles opens the vehicle list', (tester) async {
+      final repository = _repository((_) async => _ok({'driver': _driver(verification: 'APPROVED')}));
+      tester.view.physicalSize = const Size(900, 1800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MaterialApp(
+        home: DriverHomeScreen(repository: repository),
+        onGenerateRoute: (settings) => settings.name == '/vehicles'
+            ? MaterialPageRoute<void>(builder: (_) => Scaffold(appBar: AppBar(), body: const Text('Vehicle list')))
+            : null,
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Add a vehicle in My vehicles'), findsOneWidget);
+      await tester.tap(find.text('My vehicles'));
+      await tester.pumpAndSettle();
+      expect(find.text('Vehicle list'), findsOneWidget);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text('My vehicles'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('a suspended account shows suspended rather than approved', (tester) async {
       final repository = _repository(
         (_) async => _ok({'driver': _driver(verification: 'APPROVED', accountStatus: 'SUSPENDED')}),
