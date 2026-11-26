@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/app_services.dart';
 import '../../../core/widgets/common_widgets.dart';
 import '../data/driver_repository.dart';
 import '../models/driver_models.dart';
@@ -38,6 +39,14 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
   Future<void> _open(Widget screen) async {
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
     if (mounted) _reload();
+  }
+
+  /// The vehicle screens are routes from the vehicle feature (see vehicleRoute in main.dart).
+  Future<void> _openVehicles() async {
+    await Navigator.of(context).pushNamed('/vehicles');
+    if (!mounted) return;
+    // The driver may have added or activated a vehicle, which decides whether they can create trips.
+    await context.getInheritedWidgetOfExactType<AppServices>()?.checkDriverVehicle?.call();
   }
 
   Future<void> _register() async {
@@ -82,6 +91,12 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
       child: ListView(padding: const EdgeInsets.all(16), children: [
         _StatusCard(driver: driver, uploaded: uploaded),
         const SizedBox(height: 8),
+        _ToolTile(
+          icon: Icons.directions_car_outlined,
+          title: 'My vehicles',
+          subtitle: 'Add a vehicle and see its approval',
+          onTap: _openVehicles,
+        ),
         _ToolTile(
           icon: Icons.folder_outlined,
           title: 'My documents',
@@ -130,7 +145,9 @@ class _StatusCard extends StatelessWidget {
 
   String get _message {
     if (driver.accountStatus != 'ACTIVE') return 'Your driver account is not active. Contact support for help.';
-    if (driver.verification == 'APPROVED') return 'You can offer trips once you have an approved vehicle.';
+    if (driver.verification == 'APPROVED') {
+      return 'You are approved. Add a vehicle in My vehicles; you can offer trips once it is approved too.';
+    }
     if (driver.verification == 'REJECTED') return 'Your application needs changes before it can be approved.';
     final missing = driverDocumentTypes.length - uploaded;
     if (missing > 0) return 'Upload $missing more ${missing == 1 ? 'document' : 'documents'} to send your application for review.';
