@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:rideshare_mobile/core/api_client.dart';
 import 'package:rideshare_mobile/core/app_services.dart';
+import 'package:rideshare_mobile/core/widgets/app_components.dart';
 import 'package:rideshare_mobile/features/trips/trips.dart';
 import 'package:rideshare_mobile/features/vehicle/screens/vehicle_list_screen.dart';
 import 'package:rideshare_mobile/features/vehicle/screens/vehicle_verification_screen.dart';
@@ -115,6 +116,51 @@ void main() {
     expect(find.textContaining('cannot be used for trips'), findsOneWidget);
   });
 
+  testWidgets('VehicleListScreen shows readable types, seats, cargo and a summary', (tester) async {
+    final api = VehicleApi(_client((_) async => _ok([
+          _json(),
+          {..._json(id: 'v2'), 'vehicleType': 'THREE_WHEELER', 'plateNumber': 'WP QA-1111', 'cargoCapacityKg': 120},
+        ])));
+    await tester.pumpWidget(MaterialApp(home: VehicleListScreen(api: api)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 of 3 vehicles · 2 ready for trips'), findsOneWidget);
+    expect(find.text('Car · White'), findsOneWidget);
+    expect(find.text('Three-wheeler · White'), findsOneWidget);
+    expect(find.textContaining('THREE_WHEELER'), findsNothing);
+    expect(find.text('4 passenger seats'), findsNWidgets(2));
+    expect(find.text('Cargo 120 kg'), findsOneWidget);
+    expect(find.textContaining('cannot be used for trips'), findsNothing);
+  });
+
+  testWidgets('VehicleListScreen shows skeletons while loading', (tester) async {
+    final api = VehicleApi(_client((_) async {
+      await Future<void>.delayed(const Duration(seconds: 1));
+      return _ok([_json()]);
+    }));
+    await tester.pumpWidget(MaterialApp(home: VehicleListScreen(api: api)));
+    await tester.pump();
+    expect(find.byType(SkeletonList), findsOneWidget);
+
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(find.byType(SkeletonList), findsNothing);
+    expect(find.text('WP CAB-1234'), findsOneWidget);
+  });
+
+  testWidgets('VehicleListScreen fits a 320 px wide screen', (tester) async {
+    tester.view.physicalSize = const Size(320, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final api = VehicleApi(_client((_) async => _ok([
+          {..._json(status: 'REJECTED'), 'rejectionReason': 'The plate photo is not clear', 'cargoCapacityKg': 100},
+        ])));
+    await tester.pumpWidget(MaterialApp(home: VehicleListScreen(api: api)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Rejected: The plate photo is not clear'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('VehicleVerificationScreen submits and shows the new status', (tester) async {
     var status = 'NOT_SUBMITTED';
     Map<String, dynamic> info() => {'status': status, 'missingDocuments': <String>[], 'rejectionReason': null};
@@ -144,7 +190,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Not submitted'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Edit'));
+    await tester.tap(find.text('Edit'));
     await tester.pumpAndSettle();
     status = 'PENDING';
     await tester.pageBack();
