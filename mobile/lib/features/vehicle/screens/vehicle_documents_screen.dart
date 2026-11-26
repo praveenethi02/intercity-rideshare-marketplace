@@ -60,7 +60,7 @@ class _VehicleDocumentsScreenState extends State<VehicleDocumentsScreen> {
         future: _future,
         builder: (context, snap) {
           if (snap.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
+            return const SkeletonList(count: 4);
           }
           if (snap.hasError) return ErrorView(error: snap.error!, onRetry: _reload);
 

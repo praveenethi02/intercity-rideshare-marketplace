@@ -34,7 +34,7 @@ class _VehicleFormScreenState extends State<VehicleFormScreen> {
         future: _future,
         builder: (context, snap) {
           if (snap.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
+            return const SkeletonDetail(cards: 1, rowsPerCard: 5);
           }
           if (snap.hasError) {
             return ErrorView(
@@ -201,8 +201,7 @@ class _VehicleFormState extends State<_VehicleForm> {
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('Re-verification needed'),
-            content: const Text(
-                'Changing plate, type, seats or cargo sends this vehicle back to admin review. '
+            content: const Text('Changing plate, type, seats or cargo sends this vehicle back to admin review. '
                 'You cannot use it for new trips until it is approved again.'),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),

@@ -59,7 +59,8 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
     final ok = await confirmDialog(
       context,
       title: 'Publish trip?',
-      message: 'Passengers will be able to find and ${t.pricingMode == PricingMode.auction ? 'bid on' : 'book'} your seats.',
+      message:
+          'Passengers will be able to find and ${t.pricingMode == PricingMode.auction ? 'bid on' : 'book'} your seats.',
       confirmLabel: 'Publish',
     );
     if (ok && mounted) await _run(() => AppServices.of(context).trips.publish(t.id), 'Trip published');
@@ -79,7 +80,9 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
 
   Future<void> _cancel(Trip t) async {
     final reason = await showCancelTripDialog(context);
-    if (reason != null && mounted) await _run(() => AppServices.of(context).trips.cancel(t.id, reason), 'Trip cancelled');
+    if (reason != null && mounted) {
+      await _run(() => AppServices.of(context).trips.cancel(t.id, reason), 'Trip cancelled');
+    }
   }
 
   Future<void> _edit(Trip t) async {
@@ -99,13 +102,15 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
       case TripStatus.draft:
         return [
           BusyButton(busy: repoBusy, onPressed: () => _publish(t), label: 'Publish', icon: Icons.public),
-          OutlinedButton.icon(onPressed: repoBusy ? null : () => _edit(t), icon: const Icon(Icons.edit), label: const Text('Edit')),
+          OutlinedButton.icon(
+              onPressed: repoBusy ? null : () => _edit(t), icon: const Icon(Icons.edit), label: const Text('Edit')),
           TextButton(onPressed: repoBusy ? null : () => _cancel(t), child: const Text('Cancel trip')),
         ];
       case TripStatus.scheduled:
         return [
           BusyButton(busy: repoBusy, onPressed: () => _start(t), label: 'Start trip', icon: Icons.play_arrow),
-          OutlinedButton.icon(onPressed: repoBusy ? null : () => _edit(t), icon: const Icon(Icons.edit), label: const Text('Edit')),
+          OutlinedButton.icon(
+              onPressed: repoBusy ? null : () => _edit(t), icon: const Icon(Icons.edit), label: const Text('Edit')),
           TextButton(onPressed: repoBusy ? null : () => _cancel(t), child: const Text('Cancel trip')),
         ];
       case TripStatus.inProgress:
@@ -142,7 +147,7 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
       body: _error != null
           ? ErrorView(error: _error!, onRetry: _load)
           : t == null
-              ? const Center(child: CircularProgressIndicator())
+              ? const SkeletonDetail()
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView(padding: const EdgeInsets.all(16), children: [
@@ -155,7 +160,8 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
                       TagChip(PricingMode.label(t.pricingMode),
                           icon: t.pricingMode == PricingMode.auction ? Icons.gavel : Icons.sell),
                       TagChip(formatKm(t.totalDistanceKm), icon: Icons.route),
-                      if (t.allowsCargo) TagChip('Cargo ${t.cargoCapacityKg?.round() ?? ''} kg', icon: Icons.inventory_2),
+                      if (t.allowsCargo)
+                        TagChip('Cargo ${t.cargoCapacityKg?.round() ?? ''} kg', icon: Icons.inventory_2),
                     ]),
                     if (t.status == TripStatus.cancelled && t.cancelReason != null)
                       Card(
@@ -166,10 +172,13 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
                     const SectionTitle('Details'),
                     InfoRow(icon: Icons.schedule, label: 'Departure', value: formatDateTime(t.departureTime)),
                     if (t.estArrivalTime != null)
-                      InfoRow(icon: Icons.flag_outlined, label: 'Est. arrival', value: formatDateTime(t.estArrivalTime!)),
+                      InfoRow(
+                          icon: Icons.flag_outlined, label: 'Est. arrival', value: formatDateTime(t.estArrivalTime!)),
                     InfoRow(
                       icon: Icons.payments_outlined,
-                      label: t.pricingMode == PricingMode.auction ? 'Starting bid (full route)' : 'Seat price (full route)',
+                      label: t.pricingMode == PricingMode.auction
+                          ? 'Starting bid (full route)'
+                          : 'Seat price (full route)',
                       value: formatLkr(t.basePriceCents),
                     ),
                     InfoRow(
@@ -177,7 +186,8 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
                       label: 'Seats free (full route)',
                       value: '${t.seatsAvailableFullRoute ?? t.seatsOffered} of ${t.seatsOffered}',
                     ),
-                    if (t.notes != null && t.notes!.isNotEmpty) InfoRow(icon: Icons.notes, label: 'Notes', value: t.notes!),
+                    if (t.notes != null && t.notes!.isNotEmpty)
+                      InfoRow(icon: Icons.notes, label: 'Notes', value: t.notes!),
                     const SectionTitle('Route'),
                     RouteTimeline(stops: t.stops),
                     if (t.legs.isNotEmpty) ...[
@@ -185,7 +195,11 @@ class _DriverTripDetailScreenState extends State<DriverTripDetailScreen> {
                       LegOccupancy(trip: t),
                     ],
                     const SizedBox(height: 24),
-                    Wrap(spacing: 12, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: _actions(t)),
+                    Wrap(
+                        spacing: 12,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: _actions(t)),
                     if (t.status == TripStatus.scheduled && t.hasReservations)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
