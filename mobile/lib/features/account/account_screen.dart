@@ -18,6 +18,13 @@ class AccountScreen extends StatelessWidget {
   /// Opens My bookings.
   final VoidCallback? onOpenBookings;
 
+  
+  /// Opens the people the user can still rate.
+  final VoidCallback? onRateTrips;
+
+  /// Opens the ratings the user received.
+  final VoidCallback? onOpenRatings;
+
   const AccountScreen({
     super.key,
     required this.user,
@@ -25,6 +32,8 @@ class AccountScreen extends StatelessWidget {
     required this.onSignOut,
     this.onOpenDriver,
     this.onOpenBookings,
+    this.onRateTrips,
+    this.onOpenRatings,
   });
 
   Future<void> _editProfile(BuildContext context) async {
@@ -64,6 +73,28 @@ class AccountScreen extends StatelessWidget {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: onOpenBookings,
               ),
+            ),
+          ],
+                    if (onRateTrips != null && onOpenRatings != null) ...[
+            const SectionTitle('Ratings'),
+            Card(
+              child: Column(children: [
+                ListTile(
+                  leading: const Icon(Icons.rate_review_outlined),
+                  title: const Text('Rate your trips'),
+                  subtitle: const Text('People from your completed trips'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: onRateTrips,
+                ),
+                const Divider(indent: AppSpacing.lg, endIndent: AppSpacing.lg),
+                ListTile(
+                  leading: const Icon(Icons.star_outline_rounded),
+                  title: const Text('My ratings'),
+                  subtitle: const Text('What others said about you'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: onOpenRatings,
+                ),
+              ]),
             ),
           ],
           const SectionTitle('Profile'),
