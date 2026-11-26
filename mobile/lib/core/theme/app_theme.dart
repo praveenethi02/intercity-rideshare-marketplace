@@ -41,14 +41,17 @@ abstract final class AppTheme {
     scrim: Color(0x660F172C),
   );
 
+  /// Inter, bundled in assets/fonts (weights 400, 500, 600 and 700).
+  static const fontFamily = 'Inter';
+
   static ThemeData get light {
-    final base = ThemeData(colorScheme: colorScheme, useMaterial3: true);
+    final base = ThemeData(colorScheme: colorScheme, useMaterial3: true, fontFamily: fontFamily);
     // ThemeData.textTheme has no font sizes until Theme applies them, so merge the Material 3
     // size scale in first. Otherwise styles built from it here (app bar title, navigation labels)
     // fall back to 14 px.
     final text = Typography.englishLike2021
         .merge(base.textTheme)
-        .apply(bodyColor: AppColors.neutral900, displayColor: AppColors.brand900);
+        .apply(fontFamily: fontFamily, bodyColor: AppColors.neutral900, displayColor: AppColors.brand900);
     final textTheme = text.copyWith(
       headlineSmall: text.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
       titleLarge: text.titleLarge?.copyWith(fontWeight: FontWeight.w700),

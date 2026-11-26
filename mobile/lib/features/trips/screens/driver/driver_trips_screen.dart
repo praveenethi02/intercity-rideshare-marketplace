@@ -77,9 +77,8 @@ class _DriverTripsScreenState extends State<DriverTripsScreen> {
 
   Widget _list(List<Trip> trips, String emptyText, {bool newestFirst = false}) {
     final sorted = List<Trip>.of(trips)
-      ..sort((a, b) => newestFirst
-          ? b.departureTime.compareTo(a.departureTime)
-          : a.departureTime.compareTo(b.departureTime));
+      ..sort((a, b) =>
+          newestFirst ? b.departureTime.compareTo(a.departureTime) : a.departureTime.compareTo(b.departureTime));
     return RefreshIndicator(
       onRefresh: _reload,
       child: sorted.isEmpty
@@ -127,7 +126,7 @@ class _DriverTripsScreenState extends State<DriverTripsScreen> {
           future: _future,
           builder: (context, snap) {
             if (snap.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
+              return const SkeletonList();
             }
             if (snap.hasError) return ErrorView(error: snap.error!, onRetry: _reload);
             final trips = snap.data!;

@@ -31,6 +31,26 @@ void main() {
       expect(label?.fontSize, 12);
     });
 
+    test('every text style uses the bundled Inter font at the Material 3 sizes', () {
+      final text = AppTheme.light.textTheme;
+      const m3 = Typography.englishLike2021;
+      final pairs = {
+        'displayLarge': (text.displayLarge, m3.displayLarge),
+        'headlineSmall': (text.headlineSmall, m3.headlineSmall),
+        'titleLarge': (text.titleLarge, m3.titleLarge),
+        'titleMedium': (text.titleMedium, m3.titleMedium),
+        'bodyLarge': (text.bodyLarge, m3.bodyLarge),
+        'bodyMedium': (text.bodyMedium, m3.bodyMedium),
+        'labelLarge': (text.labelLarge, m3.labelLarge),
+        'labelSmall': (text.labelSmall, m3.labelSmall),
+      };
+      for (final MapEntry(key: name, value: (style, size)) in pairs.entries) {
+        expect(style?.fontFamily, AppTheme.fontFamily, reason: name);
+        expect(style?.fontSize, size?.fontSize, reason: name);
+      }
+      expect(AppTheme.light.appBarTheme.titleTextStyle?.fontFamily, AppTheme.fontFamily);
+    });
+
     test('buttons are at least 48 pixels tall for easy tapping', () {
       final style = AppTheme.light.filledButtonTheme.style!;
       expect(style.minimumSize!.resolve({})!.height, greaterThanOrEqualTo(48));

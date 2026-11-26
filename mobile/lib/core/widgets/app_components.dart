@@ -69,15 +69,83 @@ class SkeletonBox extends StatelessWidget {
 }
 
 /// Placeholder cards for a list that is still loading, with a gentle pulse.
-class SkeletonList extends StatefulWidget {
+class SkeletonList extends StatelessWidget {
   final int count;
   const SkeletonList({super.key, this.count = 3});
 
   @override
-  State<SkeletonList> createState() => _SkeletonListState();
+  Widget build(BuildContext context) {
+    return _SkeletonPulse(
+      child: ListView.separated(
+        padding: AppSpacing.screen,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: count,
+        separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.md),
+        itemBuilder: (_, __) => const AppCard(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            SkeletonBox(width: 160, height: 18),
+            SizedBox(height: AppSpacing.md),
+            SkeletonBox(),
+            SizedBox(height: AppSpacing.sm),
+            SkeletonBox(width: 220),
+          ]),
+        ),
+      ),
+    );
+  }
 }
 
-class _SkeletonListState extends State<SkeletonList> with SingleTickerProviderStateMixin {
+/// Placeholder for a detail page that is still loading: a title and subtitle, then [cards]
+/// cards of label/value rows. Pulses like [SkeletonList].
+class SkeletonDetail extends StatelessWidget {
+  final int cards;
+  final int rowsPerCard;
+  const SkeletonDetail({super.key, this.cards = 2, this.rowsPerCard = 3});
+
+  @override
+  Widget build(BuildContext context) {
+    return _SkeletonPulse(
+      child: ListView(
+        padding: AppSpacing.screen,
+        physics: const NeverScrollableScrollPhysics(),
+        children: [
+          const SkeletonBox(width: 200, height: 24),
+          const SizedBox(height: AppSpacing.sm),
+          const SkeletonBox(width: 120),
+          for (var c = 0; c < cards; c++) ...[
+            const SizedBox(height: AppSpacing.lg),
+            AppCard(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const SkeletonBox(width: 140, height: 18),
+                for (var r = 0; r < rowsPerCard; r++) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  const Row(children: [
+                    SkeletonBox(width: 20, height: 20),
+                    SizedBox(width: AppSpacing.md),
+                    Expanded(child: SkeletonBox()),
+                    SizedBox(width: AppSpacing.xl),
+                    SkeletonBox(width: 64),
+                  ]),
+                ],
+              ]),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Fades [child] in and out while content loads, and tells screen readers it is loading.
+class _SkeletonPulse extends StatefulWidget {
+  final Widget child;
+  const _SkeletonPulse({required this.child});
+
+  @override
+  State<_SkeletonPulse> createState() => _SkeletonPulseState();
+}
+
+class _SkeletonPulseState extends State<_SkeletonPulse> with SingleTickerProviderStateMixin {
   late final AnimationController _pulse = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 900),
@@ -92,27 +160,7 @@ class _SkeletonListState extends State<SkeletonList> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      label: 'Loading',
-      child: FadeTransition(
-        opacity: _pulse,
-        child: ListView.separated(
-          padding: AppSpacing.screen,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: widget.count,
-          separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.md),
-          itemBuilder: (_, __) => const AppCard(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              SkeletonBox(width: 160, height: 18),
-              SizedBox(height: AppSpacing.md),
-              SkeletonBox(),
-              SizedBox(height: AppSpacing.sm),
-              SkeletonBox(width: 220),
-            ]),
-          ),
-        ),
-      ),
-    );
+    return Semantics(label: 'Loading', child: FadeTransition(opacity: _pulse, child: widget.child));
   }
 }
 

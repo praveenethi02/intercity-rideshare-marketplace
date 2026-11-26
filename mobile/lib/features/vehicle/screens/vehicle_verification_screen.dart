@@ -63,7 +63,7 @@ class _VehicleVerificationScreenState extends State<VehicleVerificationScreen> {
         future: _future,
         builder: (context, snap) {
           if (snap.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
+            return const SkeletonDetail();
           }
           if (snap.hasError) return ErrorView(error: snap.error!, onRetry: _reload);
           final v = snap.data!;

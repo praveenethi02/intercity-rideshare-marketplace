@@ -78,7 +78,7 @@ class _SavedRoutesScreenState extends State<SavedRoutesScreen> {
       body: FutureBuilder<List<SavedRoute>>(
         future: _future,
         builder: (context, snap) {
-          if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator());
+          if (snap.connectionState != ConnectionState.done) return const SkeletonList();
           if (snap.hasError) return ErrorView(error: snap.error!, onRetry: _reload);
           final routes = snap.data!;
           if (routes.isEmpty) {

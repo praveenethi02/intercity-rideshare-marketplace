@@ -86,7 +86,7 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
   }
 
   Widget _body() {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) return const SkeletonList();
     final error = _error;
     if (error != null) return ErrorView(error: error, onRetry: _loadFirstPage);
     return RefreshIndicator(
@@ -96,7 +96,9 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
               const SizedBox(height: 96),
               EmptyView(
                 icon: Icons.history,
-                message: _status == null ? 'You have not offered any trips yet.' : 'No ${_filters[_status]!.toLowerCase()} trips.',
+                message: _status == null
+                    ? 'You have not offered any trips yet.'
+                    : 'No ${_filters[_status]!.toLowerCase()} trips.',
               ),
             ])
           : ListView.builder(

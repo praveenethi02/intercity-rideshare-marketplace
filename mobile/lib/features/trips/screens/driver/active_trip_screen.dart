@@ -76,7 +76,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       body: _error != null
           ? ErrorView(error: _error!, onRetry: _load)
           : t == null
-              ? const Center(child: CircularProgressIndicator())
+              ? const SkeletonDetail()
               : Column(children: [
                   Container(
                     width: double.infinity,
@@ -120,9 +120,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
                       child: Row(children: [
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: _currentStop < t.stops.length - 1
-                                ? () => setState(() => _currentStop++)
-                                : null,
+                            onPressed: _currentStop < t.stops.length - 1 ? () => setState(() => _currentStop++) : null,
                             icon: const Icon(Icons.where_to_vote),
                             label: const Text('Arrived at next stop'),
                           ),
