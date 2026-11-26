@@ -18,7 +18,11 @@ http.Response _ok(Map<String, Object?> data) =>
     http.Response(jsonEncode({'success': true, 'message': 'OK', 'data': data, 'meta': {}}), 200);
 
 http.Response _fail(int status, [String code = 'FAILED']) => http.Response(
-      jsonEncode({'success': false, 'message': 'Failed $code', 'meta': {'code': code}}),
+      jsonEncode({
+        'success': false,
+        'message': 'Failed $code',
+        'meta': {'code': code}
+      }),
       status,
     );
 
@@ -51,9 +55,8 @@ void main() {
 
     test('a refresh saves the new token, because the old one no longer works', () async {
       final store = MemorySessionStore();
-      final api = _Api((path) => path == '/auth/refresh'
-          ? _ok({'tokens': _tokens('r2')})
-          : _ok({'user': _user, 'tokens': _tokens('r1')}));
+      final api = _Api((path) =>
+          path == '/auth/refresh' ? _ok({'tokens': _tokens('r2')}) : _ok({'user': _user, 'tokens': _tokens('r1')}));
       final auth = AuthService(_url, httpClient: api.client, store: store);
       await auth.login('0771234567', 'Abcd1234');
 
@@ -63,9 +66,8 @@ void main() {
     });
 
     test('requests that need a refresh at the same time share one', () async {
-      final api = _Api((path) => path == '/auth/refresh'
-          ? _ok({'tokens': _tokens('r2')})
-          : _ok({'user': _user, 'tokens': _tokens('r1')}));
+      final api = _Api((path) =>
+          path == '/auth/refresh' ? _ok({'tokens': _tokens('r2')}) : _ok({'user': _user, 'tokens': _tokens('r1')}));
       final auth = AuthService(_url, httpClient: api.client);
       await auth.login('0771234567', 'Abcd1234');
 
@@ -95,9 +97,8 @@ void main() {
     test('a rate limit or server error keeps the saved token', () async {
       for (final status in [429, 500, 503]) {
         final store = MemorySessionStore();
-        final api = _Api((path) => path == '/auth/refresh'
-            ? _fail(status)
-            : _ok({'user': _user, 'tokens': _tokens('r1')}));
+        final api =
+            _Api((path) => path == '/auth/refresh' ? _fail(status) : _ok({'user': _user, 'tokens': _tokens('r1')}));
         final auth = AuthService(_url, httpClient: api.client, store: store);
         await auth.login('0771234567', 'Abcd1234');
 
@@ -148,7 +149,8 @@ void main() {
 
     test('restore forgets the token when the account can no longer be used', () async {
       final store = MemorySessionStore(baseUrl: _url, refreshToken: 'r1');
-      final api = _Api((path) => path == '/auth/refresh' ? _ok({'tokens': _tokens('r2')}) : _fail(403, 'ACCOUNT_SUSPENDED'));
+      final api =
+          _Api((path) => path == '/auth/refresh' ? _ok({'tokens': _tokens('r2')}) : _fail(403, 'ACCOUNT_SUSPENDED'));
       final auth = AuthService(_url, httpClient: api.client, store: store);
 
       await expectLater(auth.restore('r1'), throwsA(isA<ApiException>()));
@@ -181,6 +183,8 @@ void main() {
       final api = _Api(working());
       await pumpApp(tester, MemorySessionStore(baseUrl: 'http://192.168.1.5:4000/api/v1'), api);
 
+      // The logo sits above the form, so scroll down to the settings first.
+      await tester.scrollUntilVisible(find.text('Developer settings'), 100, scrollable: find.byType(Scrollable).first);
       await tester.tap(find.text('Developer settings'));
       await tester.pumpAndSettle();
 

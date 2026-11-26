@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -11,6 +11,17 @@ import 'forgot_password_screen.dart';
 import 'register_screen.dart';
 import 'verify_phone_screen.dart';
 
+/// The API address used when none was saved. Release builds get it at build time:
+/// `flutter build apk --dart-define=API_BASE_URL=http://<server>:4000/api/v1`.
+/// Without it the app talks to your computer: localhost on web, 10.0.2.2 from the Android emulator.
+String defaultApiBaseUrl({
+  String fromEnvironment = const String.fromEnvironment('API_BASE_URL'),
+  bool isWeb = kIsWeb,
+}) {
+  if (fromEnvironment.isNotEmpty) return fromEnvironment;
+  return isWeb ? 'http://localhost:4000/api/v1' : 'http://10.0.2.2:4000/api/v1';
+}
+
 /// First screen of the app. Registration and password reset open from here.
 class LoginScreen extends StatefulWidget {
   final void Function(AuthService auth) onSignedIn;
@@ -21,10 +32,24 @@ class LoginScreen extends StatefulWidget {
   /// The API address used last time, if any.
   final String? initialBaseUrl;
 
+  /// The API address when none was saved. Defaults to [defaultApiBaseUrl].
+  final String? defaultBaseUrl;
+
   /// Lets tests answer the API calls.
   final http.Client? httpClient;
 
-  const LoginScreen({super.key, required this.onSignedIn, this.store, this.initialBaseUrl, this.httpClient});
+  /// Shows the API address field. Release builds hide it, so users cannot change the server.
+  final bool showDeveloperSettings;
+
+  const LoginScreen({
+    super.key,
+    required this.onSignedIn,
+    this.store,
+    this.initialBaseUrl,
+    this.defaultBaseUrl,
+    this.httpClient,
+    this.showDeveloperSettings = !kReleaseMode,
+  });
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -32,9 +57,8 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  // Android emulator: 10.0.2.2 is your computer. iOS simulator and web: use localhost.
   late final _baseUrl = TextEditingController(
-    text: widget.initialBaseUrl ?? (kIsWeb ? 'http://localhost:4000/api/v1' : 'http://10.0.2.2:4000/api/v1'),
+    text: widget.initialBaseUrl ?? widget.defaultBaseUrl ?? defaultApiBaseUrl(),
   );
   final _phone = TextEditingController();
   final _password = TextEditingController();
@@ -124,6 +148,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return AuthPage(
+      header: const Center(child: AppLogo(size: 200)),
       title: 'Sign in',
       subtitle: 'Book your seat, bid fairly, travel safely.',
       children: [
@@ -160,24 +185,27 @@ class _LoginScreenState extends State<LoginScreen> {
           onPressed: () => _open((auth) => RegisterScreen(auth: auth, onSignedIn: widget.onSignedIn)),
           child: const Text('Create an account'),
         ),
-        const SizedBox(height: 12),
-        ExpansionTile(
-          tilePadding: EdgeInsets.zero,
-          title: const Text('Developer settings'),
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: TextField(
-                controller: _baseUrl,
-                decoration: const InputDecoration(
-                  labelText: 'API base URL',
-                  helperText: 'Android emulator: 10.0.2.2 · iOS simulator: localhost · phone: your computer\'s Wi-Fi IP',
-                  helperMaxLines: 2,
+        if (widget.showDeveloperSettings) ...[
+          const SizedBox(height: 12),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: const Text('Developer settings'),
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: TextField(
+                  controller: _baseUrl,
+                  decoration: const InputDecoration(
+                    labelText: 'API base URL',
+                    helperText:
+                        'Android emulator: 10.0.2.2 · iOS simulator: localhost · phone: your computer\'s Wi-Fi IP',
+                    helperMaxLines: 2,
+                  ),
                 ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
+        ],
       ],
     );
   }

@@ -1,5 +1,5 @@
 name: rideshare_mobile
-description: Intercity Rideshare mobile app (Flutter)
+description: Ride Share mobile app (Flutter)
 publish_to: 'none'
 version: 0.1.0+1
 
@@ -17,9 +17,13 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/branding/logo.png
 
   # Inter (SIL Open Font License, see assets/fonts/OFL.txt). Bundled so the app works offline.
   fonts:
@@ -33,3 +37,12 @@ flutter:
           weight: 600
         - asset: assets/fonts/Inter-Bold.ttf
           weight: 700
+
+# App icon (SCRUM-298). After changing assets/icon/app_icon.png run: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  image_path: assets/icon/app_icon.png
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  adaptive_icon_foreground: assets/icon/app_icon.png
+  adaptive_icon_background: "#FFFFFF"

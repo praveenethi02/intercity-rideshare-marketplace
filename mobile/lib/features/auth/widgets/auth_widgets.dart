@@ -42,7 +42,10 @@ class AuthPage extends StatelessWidget {
   final String title;
   final String subtitle;
   final List<Widget> children;
-  const AuthPage({super.key, required this.title, required this.subtitle, required this.children});
+
+  /// Shown above the title, e.g. the logo on the sign-in screen.
+  final Widget? header;
+  const AuthPage({super.key, required this.title, required this.subtitle, required this.children, this.header});
 
   @override
   Widget build(BuildContext context) {
@@ -59,6 +62,7 @@ class AuthPage extends StatelessWidget {
               shrinkWrap: true,
               padding: const EdgeInsets.all(AppSpacing.xl),
               children: [
+                if (header case final header?) ...[header, const SizedBox(height: AppSpacing.lg)],
                 Text(title, style: theme.textTheme.headlineSmall),
                 const SizedBox(height: AppSpacing.xs),
                 Text(subtitle, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),

@@ -8,6 +8,7 @@ import 'package:rideshare_mobile/core/api_client.dart';
 import 'package:rideshare_mobile/core/auth_service.dart';
 import 'package:rideshare_mobile/core/session_store.dart';
 import 'package:rideshare_mobile/core/theme/app_theme.dart';
+import 'package:rideshare_mobile/core/widgets/common_widgets.dart';
 import 'package:rideshare_mobile/features/account/account_screen.dart';
 import 'package:rideshare_mobile/features/account/splash_screen.dart';
 
@@ -230,9 +231,20 @@ void main() {
     expect(auth.user?.fullName, 'Kasun Perera');
   });
 
-  testWidgets('SplashScreen shows the app name while it loads', (tester) async {
+  testWidgets('SplashScreen shows the logo while it loads', (tester) async {
     await tester.pumpWidget(MaterialApp(theme: AppTheme.light, home: const SplashScreen()));
-    expect(find.text('Intercity Rideshare'), findsOneWidget);
+    expect(find.bySemanticsLabel('Ride Share'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
+  });
+
+  testWidgets('SplashScreen logo is about 60% of the width and at most 280 px', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    for (final (width, expected) in [(320.0, 192.0), (800.0, 280.0)]) {
+      tester.view.physicalSize = Size(width, 700);
+      await tester.pumpWidget(MaterialApp(theme: AppTheme.light, home: const SplashScreen()));
+      expect(tester.getSize(find.byType(AppLogo)).width, expected, reason: 'screen $width px');
+      expect(tester.takeException(), isNull);
+    }
   });
 }

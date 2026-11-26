@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Release builds need this to reach the API. Debug and profile builds add it in their own manifests. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="rideshare_mobile"
+        android:label="Ride Share"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

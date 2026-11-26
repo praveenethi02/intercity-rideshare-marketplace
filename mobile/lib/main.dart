@@ -173,7 +173,7 @@ class _RideshareAppState extends State<RideshareApp> {
   Widget build(BuildContext context) {
     final user = _auth?.user;
     return MaterialApp(
-      title: 'Intercity Rideshare',
+      title: 'Ride Share',
       debugShowCheckedModeBanner: false,
       // The shared theme from the Figma design system (SCRUM-296).
       theme: AppTheme.light,
