@@ -7,11 +7,12 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/widgets/common_widgets.dart';
 import '../../models/search.dart';
 import '../../models/trip.dart';
+import '../../widgets/driver_vehicle_card.dart';
 import '../../widgets/search_result_card.dart';
 import '../../widgets/trip_widgets.dart';
 
 /// Passenger's view of a trip for their own segment (pickup → drop): seats left on each leg,
-/// cargo space, times and price (SCRUM-71, SCRUM-73, SCRUM-74).
+/// cargo space, times, price, driver and vehicle (SCRUM-70, SCRUM-71, SCRUM-73, SCRUM-74).
 /// The Book / Bid button hands a [SegmentSelection] to the Booking or
 /// Auction module via [AppServices.onBookSegment].
 class PassengerTripDetailScreen extends StatefulWidget {
@@ -20,12 +21,16 @@ class PassengerTripDetailScreen extends StatefulWidget {
   final int toStop;
   final int seats;
 
+  /// Called after the passenger was in the booking screens, where the free seats may have changed.
+  final VoidCallback? onSeatsChanged;
+
   const PassengerTripDetailScreen({
     super.key,
     required this.tripId,
     required this.fromStop,
     required this.toStop,
     this.seats = 1,
+    this.onSeatsChanged,
   });
 
   @override
@@ -35,10 +40,22 @@ class PassengerTripDetailScreen extends StatefulWidget {
 class _PassengerTripDetailScreenState extends State<PassengerTripDetailScreen> {
   late Future<(Trip, SegmentAvailability)> _future;
 
+  /// True while another screen, such as the booking screens, covers this one.
+  bool _covered = false;
+
   @override
   void initState() {
     super.initState();
     _future = _fetch();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final isCurrent = ModalRoute.isCurrentOf(context) ?? true;
+    // Back from the booking screens: a booking may have been made or cancelled there.
+    if (isCurrent && _covered) _future = _fetch();
+    _covered = !isCurrent;
   }
 
   Future<(Trip, SegmentAvailability)> _fetch() async {
@@ -81,6 +98,7 @@ class _PassengerTripDetailScreenState extends State<PassengerTripDetailScreen> {
       return;
     }
     await handler(context, selection);
+    widget.onSeatsChanged?.call();
     if (mounted) _reload(); // seats may have changed
   }
 
@@ -182,6 +200,11 @@ class _PassengerTripDetailScreenState extends State<PassengerTripDetailScreen> {
                       ),
                   ]),
                 ),
+                const SectionTitle('Driver and vehicle'),
+                DriverVehicleCard(
+                  loadDriver: () => AppServices.of(context).trips.driverProfile(trip.driverId),
+                  vehicle: trip.vehicle,
+                ),
                 const SectionTitle('Seats'),
                 AppCard(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -192,9 +215,14 @@ class _PassengerTripDetailScreenState extends State<PassengerTripDetailScreen> {
                           style: theme.textTheme.titleMedium,
                         ),
                       ),
-                      AppBadge(
-                        a.seatsAvailable >= widget.seats ? 'Enough for you' : 'Not enough',
-                        tone: a.seatsAvailable >= widget.seats ? StatusTone.success : StatusTone.danger,
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: fitBadge(AppBadge(
+                            a.seatsAvailable >= widget.seats ? 'Enough for you' : 'Not enough',
+                            tone: a.seatsAvailable >= widget.seats ? StatusTone.success : StatusTone.danger,
+                          )),
+                        ),
                       ),
                     ]),
                     if (legs.isNotEmpty) ...[

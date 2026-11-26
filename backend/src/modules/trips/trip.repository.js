@@ -73,6 +73,18 @@ async function findStops(tripId, client = db) {
 }
 
 /** Array where index = leg_index and value = seats_reserved. */
+/**
+ * What a passenger may see of a vehicle. Read-only: the vehicles module owns this table. The plate
+ * number and the verification data are left out on purpose.
+ */
+async function findPublicVehicle(vehicleId, client = db) {
+  const { rows } = await client.query(
+    'SELECT vehicle_type, make, model, year, color FROM vehicles WHERE id = $1',
+    [vehicleId],
+  );
+  return rows[0] || null;
+}
+
 async function findLegSeats(tripId, client = db) {
   const { rows } = await client.query(
     'SELECT leg_index, seats_reserved FROM trip_legs WHERE trip_id = $1 ORDER BY leg_index',
@@ -281,6 +293,7 @@ module.exports = {
   findById,
   lock,
   findStops,
+  findPublicVehicle,
   findLegSeats,
   findLegSeatsForTrips,
   update,

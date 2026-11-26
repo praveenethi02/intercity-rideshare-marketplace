@@ -392,6 +392,146 @@ describe('who can see and cancel a booking', () => {
   });
 });
 
+describe('journey details on GET /bookings/:id (SCRUM-83)', () => {
+  const detail = async (id, token) => {
+    const res = await get(`/bookings/${id}`, token);
+    expect(res.status).toBe(200);
+    return res.body.data.booking;
+  };
+
+  const plateOf = async (vehicleId) =>
+    (await db.query('SELECT plate_number FROM vehicles WHERE id = $1', [vehicleId])).rows[0].plate_number;
+
+  /** A driver, a passenger and a booking from Kadawatha (1) to Kandy (3). */
+  async function journey() {
+    const driver = await signedInDriver();
+    const trip = await tripOf(driver);
+    const passenger = await signedInPassenger();
+    const booking = await booked(passenger.token, { tripId: trip.id, fromStop: 1, toStop: 3 });
+    return { driver, trip, passenger, booking, plate: await plateOf(driver.vehicleId) };
+  }
+
+  test('the passenger, the driver and an admin see the vehicle with its plate', async () => {
+    const { driver, passenger, booking, plate } = await journey();
+    const admin = await signedInAdmin();
+
+    for (const viewer of [passenger, driver, admin]) {
+      // toEqual: exactly these fields.
+      expect((await detail(booking.id, viewer.token)).trip.vehicle).toEqual({
+        type: 'CAR',
+        make: 'Toyota',
+        model: 'Axio',
+        year: 2016,
+        color: 'White',
+        plateNumber: plate,
+      });
+    }
+  });
+
+  test('outsiders get 404 and no plate', async () => {
+    const { trip, booking, plate } = await journey();
+    const stranger = await signedInPassenger();
+    const otherDriver = await signedInDriver();
+    // Even a passenger with their own booking on the same trip.
+    const otherPassenger = await signedInPassenger();
+    await booked(otherPassenger.token, { tripId: trip.id });
+
+    for (const viewer of [stranger, otherDriver, otherPassenger]) {
+      const res = await get(`/bookings/${booking.id}`, viewer.token);
+      expectError(res, 404, 'BOOKING_NOT_FOUND');
+      expect(res.text).not.toContain(plate);
+    }
+  });
+
+  test('hides the plate from the passenger after the booking is cancelled', async () => {
+    const { driver, passenger, booking, plate } = await journey();
+    const admin = await signedInAdmin();
+    expect((await post(`/bookings/${booking.id}/cancel`, {}, passenger.token)).status).toBe(200);
+
+    expect((await detail(booking.id, passenger.token)).trip.vehicle).toMatchObject({ make: 'Toyota', plateNumber: null });
+    expect((await detail(booking.id, driver.token)).trip.vehicle.plateNumber).toBe(plate);
+    expect((await detail(booking.id, admin.token)).trip.vehicle.plateNumber).toBe(plate);
+  });
+
+  test('hides the plate from the passenger after the trip is cancelled, and gives the reason', async () => {
+    const { driver, trip, passenger, booking, plate } = await journey();
+    const admin = await signedInAdmin();
+    expect((await post(`/trips/${trip.id}/cancel`, { reason: 'Car broke down' }, driver.token)).status).toBe(200);
+
+    const seen = await detail(booking.id, passenger.token);
+    expect(seen.trip.vehicle.plateNumber).toBeNull();
+    expect(seen.trip).toMatchObject({ status: 'CANCELLED', cancelReason: 'Car broke down' });
+    expect((await detail(booking.id, driver.token)).trip.vehicle.plateNumber).toBe(plate);
+    expect((await detail(booking.id, admin.token)).trip.vehicle.plateNumber).toBe(plate);
+  });
+
+  test('keeps the plate while the trip runs and after it, with the start and end times', async () => {
+    const { driver, trip, passenger, booking, plate } = await journey();
+    expect((await detail(booking.id, passenger.token)).trip).toMatchObject({
+      startedAt: null,
+      completedAt: null,
+      cancelReason: null,
+    });
+
+    await db.query("UPDATE trips SET departure_at = now() + interval '10 minutes' WHERE id = $1", [trip.id]);
+    expect((await post(`/trips/${trip.id}/start`, {}, driver.token)).status).toBe(200);
+    const started = await detail(booking.id, passenger.token);
+    expect(started.trip).toMatchObject({ startedAt: expect.any(String), completedAt: null });
+    expect(started.trip.vehicle.plateNumber).toBe(plate);
+
+    expect((await post(`/trips/${trip.id}/complete`, {}, driver.token)).status).toBe(200);
+    const completed = await detail(booking.id, passenger.token);
+    expect(completed.trip.completedAt).toEqual(expect.any(String));
+    expect(completed.trip.vehicle.plateNumber).toBe(plate);
+  });
+
+  test("lists only the segment's stops, in order", async () => {
+    const driver = await signedInDriver();
+    const trip = await tripOf(driver);
+    const [a, b] = await Promise.all([signedInPassenger(), signedInPassenger()]);
+    const middle = await booked(a.token, { tripId: trip.id, fromStop: 1, toStop: 2 });
+    const whole = await booked(b.token, { tripId: trip.id, fromStop: 0, toStop: 3 });
+
+    expect((await detail(middle.id, a.token)).trip.stops).toEqual([
+      { stopOrder: 1, name: 'Kadawatha', plannedAt: null },
+      { stopOrder: 2, name: 'Kegalle', plannedAt: null },
+    ]);
+    const stops = (await detail(whole.id, b.token)).trip.stops;
+    expect(stops.map((s) => s.name)).toEqual(['Colombo Fort', 'Kadawatha', 'Kegalle', 'Kandy']);
+    expect(stops[0].plannedAt).toBe(trip.departureAt);
+  });
+
+  test('the vehicle is null when its row is missing', async () => {
+    const { trip, passenger, booking } = await journey();
+    await db.query('UPDATE trips SET vehicle_id = $2 WHERE id = $1', [trip.id, crypto.randomUUID()]);
+
+    expect((await detail(booking.id, passenger.token)).trip.vehicle).toBeNull();
+  });
+
+  test('keeps the existing fields and shows no private driver details', async () => {
+    const { driver, passenger, booking } = await journey();
+
+    const res = await get(`/bookings/${booking.id}`, passenger.token);
+
+    expect(res.body.data.booking).toMatchObject(booking);
+    expect(res.text).not.toContain(driver.user.phone);
+    expect(res.text).not.toContain(driver.user.fullName);
+    expect(res.text).not.toMatch(/phone|email|nic|licen[cs]e|address|document|verification/i);
+  });
+
+  test('is not added to the create, cancel and list responses', async () => {
+    const { passenger, booking } = await journey();
+    const listed = (await get('/bookings/mine', passenger.token)).body.data.bookings[0];
+    const cancelled = (await post(`/bookings/${booking.id}/cancel`, {}, passenger.token)).body.data.booking;
+
+    for (const shape of [booking, listed, cancelled]) {
+      for (const field of ['vehicle', 'stops', 'startedAt', 'completedAt', 'cancelReason']) {
+        expect(shape.trip).not.toHaveProperty(field);
+      }
+    }
+  });
+});
+
 describe('GET /bookings/mine', () => {
   test('lists only my bookings, newest first, with upcoming and past filters and paging', async () => {
     const driver = await signedInDriver();

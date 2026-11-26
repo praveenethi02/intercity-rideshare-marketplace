@@ -3,6 +3,7 @@
 library;
 
 export 'data/trip_repository.dart';
+export 'models/driver_vehicle.dart';
 export 'models/saved_route.dart';
 export 'models/search.dart';
 export 'models/trip.dart';

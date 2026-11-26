@@ -67,6 +67,11 @@ function toTrip(row, stops, legSeats) {
   return trip;
 }
 
+function toPublicVehicle(row) {
+  if (!row) return null;
+  return { type: row.vehicle_type, make: row.make, model: row.model, year: row.year, color: row.color };
+}
+
 function toSavedRoute(row) {
   return { id: row.id, name: row.name, stops: row.stops, createdAt: row.created_at };
 }
@@ -138,6 +143,12 @@ async function getTrip(id, viewer) {
   if (row.status === TRIP_STATUS.DRAFT && !isOwner) throw tripNotFound();
   const [stops, legSeats] = await Promise.all([repo.findStops(id), repo.findLegSeats(id)]);
   return toTrip(row, stops, legSeats);
+}
+
+/** GET /trips/:id: the trip with its vehicle (SCRUM-70). Same visibility rule as getTrip. */
+async function getTripDetail(id, viewer) {
+  const trip = await getTrip(id, viewer);
+  return { ...trip, vehicle: toPublicVehicle(await repo.findPublicVehicle(trip.vehicleId)) };
 }
 
 async function createTrip(driver, input) {
@@ -498,6 +509,7 @@ async function deleteSavedRoute(driver, id) {
 
 module.exports = {
   getTrip,
+  getTripDetail,
   createTrip,
   updateTrip,
   publishTrip,

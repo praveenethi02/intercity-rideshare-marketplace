@@ -1,4 +1,5 @@
 import '../../../core/api_client.dart';
+import '../models/driver_vehicle.dart';
 import '../models/saved_route.dart';
 import '../models/search.dart';
 import '../models/trip.dart';
@@ -57,6 +58,10 @@ class TripRepository {
   }
 
   // ---------- passenger ----------
+  /// The public profile of a trip's driver (drivers module).
+  Future<DriverPublicProfile> driverProfile(String id) async =>
+      DriverPublicProfile.fromJson(_data(await api.get('/drivers/$id'))['driver'] as Map<String, dynamic>);
+
   /// One page of trips. Filters and sort are sent to the server, so they apply to every page.
   Future<SearchPage> search(SearchQuery query, {int page = 1, int limit = SearchQuery.pageSize}) async {
     final r = await api.get('/trips/search', query: query.toQuery(page: page, limit: limit));

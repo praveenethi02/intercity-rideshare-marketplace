@@ -1,4 +1,6 @@
 import '../../../core/api_client.dart';
+import '../../trips/data/trip_repository.dart';
+import '../../trips/models/driver_vehicle.dart';
 import '../../trips/models/search.dart' show SegmentSelection;
 import 'booking_models.dart';
 
@@ -21,12 +23,20 @@ class BookingApi {
         'seats': s.seats,
       }));
 
-  Future<List<Booking>> mine(BookingWhen when) async {
-    final r = await api.get('/bookings/mine', query: {'when': when.name, 'limit': '50'});
-    return ((r.data as Map<String, dynamic>)['bookings'] as List<dynamic>)
+  /// One page of the passenger's bookings, newest first.
+  Future<BookingPage> mine(BookingWhen when, {int page = 1}) async {
+    final r = await api.get('/bookings/mine', query: {'when': when.name, 'page': '$page', 'limit': '20'});
+    final items = ((r.data as Map<String, dynamic>)['bookings'] as List<dynamic>)
         .map((b) => Booking.fromJson(b as Map<String, dynamic>))
         .toList();
+    return BookingPage(items: items, page: page, totalPages: (r.meta['totalPages'] as int?) ?? page);
   }
+
+  /// One booking with its journey details.
+  Future<Booking> get(String id) async => _booking(await api.get('/bookings/$id'));
+
+  /// The public profile of the trip's driver.
+  Future<DriverPublicProfile> driverProfile(String id) => TripRepository(api).driverProfile(id);
 
   Future<Booking> cancel(String id) async => _booking(await api.post('/bookings/$id/cancel', {}));
 }

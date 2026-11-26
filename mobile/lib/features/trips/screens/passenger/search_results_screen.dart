@@ -130,15 +130,18 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     if (picked != null && mounted) _setFilters(picked);
   }
 
-  void _openTrip(TripSearchResult r) {
-    Navigator.of(context).push(MaterialPageRoute(
+  Future<void> _openTrip(TripSearchResult r) async {
+    var seatsChanged = false;
+    await Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => PassengerTripDetailScreen(
         tripId: r.tripId,
         fromStop: r.pickup.order!,
         toStop: r.drop.order!,
         seats: _query.seats,
+        onSeatsChanged: () => seatsChanged = true,
       ),
     ));
+    if (mounted && seatsChanged) _load();
   }
 
   @override

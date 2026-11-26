@@ -109,9 +109,10 @@ paths:
     get:
       tags: [Trips]
       operationId: getTrip
-      summary: Trip with stops and seats per leg (DRAFT visible only to owner/admin)
+      summary: Trip with stops, seats per leg and its vehicle (DRAFT visible only to owner/admin)
+      description: The driver's public details come from GET /drivers/{driverId}.
       responses:
-        '200': { $ref: '#/components/responses/TripResponse' }
+        '200': { $ref: '#/components/responses/TripDetailResponse' }
         '404': { $ref: '#/components/responses/Error' }
     patch:
       tags: [Trips]
@@ -279,6 +280,16 @@ components:
               - type: object
                 properties:
                   data: { type: object, properties: { trip: { $ref: '#/components/schemas/Trip' } } }
+    TripDetailResponse:
+      description: Trip with its vehicle
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - type: object
+                properties:
+                  data: { type: object, properties: { trip: { $ref: '#/components/schemas/TripDetail' } } }
     Error:
       description: Error (success = false)
       content:
@@ -423,6 +434,26 @@ components:
           properties:
             stops: { type: array, items: { $ref: '#/components/schemas/TripStop' } }
             legs: { type: array, items: { $ref: '#/components/schemas/TripLeg' } }
+
+    TripDetail:
+      allOf:
+        - $ref: '#/components/schemas/Trip'
+        - type: object
+          properties:
+            vehicle:
+              nullable: true
+              description: null if the vehicle row is missing. Never has the plate number.
+              allOf:
+                - $ref: '#/components/schemas/TripVehicle'
+
+    TripVehicle:
+      type: object
+      properties:
+        type: { type: string, enum: [CAR, THREE_WHEELER, MOTORBIKE, SUV, VAN, MINIBUS, BUS, PICKUP, LORRY] }
+        make: { type: string, example: Toyota }
+        model: { type: string, example: Axio }
+        year: { type: integer, example: 2016 }
+        color: { type: string, example: White }
 
     TripSearchResult:
       type: object

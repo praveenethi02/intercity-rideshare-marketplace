@@ -26,7 +26,7 @@ router.get('/mine', validate({ query: schemas.myBookingsQuery }), async (req, re
 });
 
 router.get('/:id', validate(byId), async (req, res) => {
-  const booking = await bookingService.getBooking(req.validated.params.id, req.user);
+  const booking = await bookingService.getBookingDetail(req.validated.params.id, req.user);
   return respond(res, { message: 'Booking loaded', data: { booking } });
 });
 
