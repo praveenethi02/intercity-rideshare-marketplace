@@ -91,11 +91,13 @@ class _DriverDocumentsScreenState extends State<DriverDocumentsScreen> {
         future: _future,
         builder: (context, snap) {
           if (snap.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
+            return const SkeletonList(count: 4);
           }
           if (snap.hasError) return ErrorView(error: snap.error!, onRetry: _reload);
           final driver = snap.data;
-          if (driver == null) return const EmptyView(icon: Icons.badge_outlined, message: 'Register as a driver first.');
+          if (driver == null) {
+            return const EmptyView(icon: Icons.badge_outlined, message: 'Register as a driver first.');
+          }
 
           final byType = {for (final d in driver.documents) d.type: d};
           final uploaded = driverDocumentTypes.where(byType.containsKey).length;

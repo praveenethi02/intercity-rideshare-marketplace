@@ -66,7 +66,7 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> {
         future: _future,
         builder: (context, snap) {
           if (snap.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
+            return const SkeletonDetail();
           }
           if (snap.hasError) return ErrorView(error: snap.error!, onRetry: _reload);
           final driver = snap.data;
@@ -150,7 +150,9 @@ class _StatusCard extends StatelessWidget {
     }
     if (driver.verification == 'REJECTED') return 'Your application needs changes before it can be approved.';
     final missing = driverDocumentTypes.length - uploaded;
-    if (missing > 0) return 'Upload $missing more ${missing == 1 ? 'document' : 'documents'} to send your application for review.';
+    if (missing > 0) {
+      return 'Upload $missing more ${missing == 1 ? 'document' : 'documents'} to send your application for review.';
+    }
     return 'An admin is reviewing your documents.';
   }
 
